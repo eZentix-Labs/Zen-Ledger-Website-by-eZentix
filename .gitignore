@@ -4,3 +4,4 @@ dist/
 data/
 *.log
 .npm-cache/
+package-lock.json
