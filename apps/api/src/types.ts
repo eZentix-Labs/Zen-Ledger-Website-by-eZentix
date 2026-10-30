@@ -1,0 +1,10 @@
+export type Role='owner'|'accounts'|'salesman';
+export type StockPolicy='submission'|'approval'|'dispatch';
+export type Product={id:string;name:string;sku:string;category:string;unit:string;price:number;stock:number;reservedStock:number;reorder:number;status:'active'|'archived'};
+export type Customer={id:string;name:string;phone:string;balance:number;createdBy?:string};
+export type OrderStatus='Pending'|'Approved'|'Rejected'|'Cancelled'|'Processing'|'Dispatched'|'Delivered';
+export type OrderLine={productId:string;name:string;qty:number;price:number;unit:string};
+export type Order={id:string;customerId:string;customerName:string;createdBy?:string;items:OrderLine[];total:number;status:OrderStatus;createdAt:string;updatedAt:string;reason?:string;idempotencyKey?:string;requestFingerprint?:string;stockReserved?:boolean};
+export type Invoice={id:string;number:string;customerName:string;total:number;paid:number;status:'Paid'|'Partial'|'Due';createdAt:string};
+export type InventoryMovement={id:string;productId:string;unit:string;quantity:number;type:'opening'|'purchase_receipt'|'reservation'|'reservation_release'|'sale'|'return'|'adjustment';sourceId?:string;actor:string;reason?:string;beforeOnHand:number;afterOnHand:number;beforeReserved:number;afterReserved:number;createdAt:string;idempotencyKey?:string};
+export type Store={users:{id:string;name:string;email:string;password:string;role:Role}[];products:Product[];customers:Customer[];orders:Order[];invoices:Invoice[];settings:{businessName:string;currency:string;stockPolicy:StockPolicy;taxEnabled:boolean};audit:{id:string;action:string;actor:string;at:string}[];inventoryMovements:InventoryMovement[]};

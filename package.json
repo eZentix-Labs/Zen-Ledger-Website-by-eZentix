@@ -1,0 +1,19 @@
+{
+  "name": "business-management-system",
+  "version": "0.2.0",
+  "private": true,
+  "description": "Inventory, billing, salesman ordering and accounts management system",
+  "scripts": {
+    "dev": "concurrently \"npm:dev:api\" \"npm:dev:web\"",
+    "dev:api": "tsx apps/api/src/server.ts",
+    "dev:web": "vite --config apps/web/vite.config.ts",
+    "build": "tsc -p apps/api/tsconfig.json && vite build --config apps/web/vite.config.ts",
+    "typecheck": "tsc -p apps/api/tsconfig.json --noEmit && tsc -p apps/web/tsconfig.json --noEmit",
+    "test": "vitest run",
+    "start": "node dist/api/server.js",
+    "import:json": "tsx scripts/import-json.ts",
+    "seed:furniture": "tsc --ignoreConfig --target ES2022 --module ES2022 --moduleResolution bundler --esModuleInterop --skipLibCheck --types node --outDir .phase9-compile scripts/seed-furniture.ts && node .phase9-compile/scripts/seed-furniture.js"
+  },
+  "dependencies": {"bcryptjs":"latest","cors":"latest","dotenv":"latest","express":"latest","express-rate-limit":"latest","helmet":"latest","jsonwebtoken":"latest","lucide-react":"latest","mongoose":"latest","react":"latest","react-dom":"latest","react-router-dom":"latest","zod":"latest"},
+  "devDependencies": {"@types/cors":"latest","@types/express":"latest","@types/jsonwebtoken":"latest","@types/node":"latest","@types/react":"latest","@types/react-dom":"latest","@vitejs/plugin-react":"latest","concurrently":"latest","tsx":"latest","typescript":"latest","vite":"latest","vitest":"latest"}
+}
