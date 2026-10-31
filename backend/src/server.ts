@@ -11,7 +11,8 @@ import {Order,OrderStatus,Role,Store} from './types.js';
 import {StockError,available,finalizeSale,release,reserve} from './stock.js';
 
 export const app=express();
-app.use(helmet());app.use(cors({origin:config.APP_ORIGIN}));app.use(express.json({limit:'1mb'}));app.use(rateLimit({windowMs:60_000,max:240,standardHeaders:true,legacyHeaders:false}));
+const allowedOrigins=new Set([config.APP_ORIGIN,'https://zen-ledger-website-by-e-zentix-8b9g.vercel.app','https://zen-ledger-website-by-e-zentix-8b9g-git-main-ezentic.vercel.app']);
+app.use(helmet());app.use(cors({origin:(origin,callback)=>{if(!origin||allowedOrigins.has(origin))return callback(null,true);return callback(new Error('CORS origin is not allowed'));}}));app.use(express.json({limit:'1mb'}));app.use(rateLimit({windowMs:60_000,max:240,standardHeaders:true,legacyHeaders:false}));
 let db:Store;let repo:Repository;
 let lock=Promise.resolve();
 async function runExclusive<T>(fn:()=>Promise<T>):Promise<T>{const before=structuredClone(db);const releaseLock=await repo?.acquireMutationLock?.();try{return await fn();}catch(e){db=before;throw e;}finally{await releaseLock?.();}}
