@@ -5,7 +5,7 @@
   "buildCommand": "npm run build --prefix frontend",
   "outputDirectory": "frontend/dist",
   "rewrites": [
-    {"source":"/api/:path*","destination":"https://zen-ledger-website-by-e-zentix.onrender.com/api/:path*"},
+    {"source":"/api/:path*","destination":"https://zen-ledger-website-by-ezentix.onrender.com/api/:path*"},
     {"source":"/:path((?!api/).*)","destination":"/index.html"}
   ]
 }
