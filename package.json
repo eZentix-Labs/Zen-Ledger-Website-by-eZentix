@@ -1,6 +1,7 @@
 {
   "name": "business-management-system",
   "version": "0.2.0",
+  "type": "module",
   "private": true,
   "description": "Inventory, billing, salesman ordering and accounts management system",
   "scripts": {
