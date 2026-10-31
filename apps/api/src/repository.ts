@@ -1,4 +1,4 @@
-﻿import fs from 'node:fs/promises';
+import fs from 'node:fs/promises';
 import path from 'node:path';
 import mongoose from 'mongoose';
 import bcrypt from 'bcryptjs';
