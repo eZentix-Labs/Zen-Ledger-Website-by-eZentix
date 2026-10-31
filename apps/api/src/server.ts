@@ -53,7 +53,9 @@ app.patch('/api/settings',auth,allow('owner'),(req,res)=>exclusiveHandler(req,re
 app.get('/api/audit',auth,allow('owner','accounts'),(_,res)=>res.json(db.audit.slice(0,100)));
 app.use((err:any,_req:express.Request,res:express.Response,_next:express.NextFunction)=>handleError(res,err));
 
-async function bootstrap(){repo=config.PERSISTENCE==='mongo'?new MongoRepository():new JsonRepository();if(repo instanceof MongoRepository)await repo.connect();db=await repo.load();const server=app.listen(config.PORT,()=>console.log(`API listening on http://localhost:${config.PORT} using ${repo.kind}`));const shutdown=async()=>{server.close();await repo.close();process.exit(0)};process.once('SIGINT',shutdown);process.once('SIGTERM',shutdown);}
+async function initialize(){if(db)return;repo=config.PERSISTENCE==='mongo'?new MongoRepository():new JsonRepository();if(repo instanceof MongoRepository)await repo.connect();db=await repo.load();}
+async function bootstrap(){await initialize();if(process.env.VERCEL)return;const server=app.listen(config.PORT,()=>console.log(`API listening on http://localhost:${config.PORT} using ${repo.kind}`));const shutdown=async()=>{server.close();await repo.close();process.exit(0)};process.once('SIGINT',shutdown);process.once('SIGTERM',shutdown);}
+export async function ensureInitialized(){await initialize();}
 export function installTestState(testDb:Store,testRepo:Repository){db=testDb;repo=testRepo;}
 export {bootstrap};
-if(process.env.API_AUTOSTART!=='false')bootstrap().catch(e=>{console.error('API startup failed:',e instanceof Error?e.message:'unknown error');process.exit(1);});
+if(process.env.API_AUTOSTART!=='false'&&!process.env.VERCEL)bootstrap().catch(e=>{console.error('API startup failed:',e instanceof Error?e.message:'unknown error');process.exit(1);});
