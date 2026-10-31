@@ -1,0 +1,8 @@
+{
+  "name": "zen-ledger-backend",
+  "private": true,
+  "type": "module",
+  "scripts": {"dev":"tsx src/server.ts","build":"tsc -p tsconfig.json","start":"tsx src/server.ts"},
+  "dependencies": {"bcryptjs":"latest","cors":"latest","dotenv":"latest","express":"latest","express-rate-limit":"latest","helmet":"latest","jsonwebtoken":"latest","mongoose":"latest","zod":"latest","tsx":"latest","typescript":"latest"},
+  "devDependencies": {"@types/cors":"latest","@types/express":"latest","@types/jsonwebtoken":"latest","@types/node":"latest"}
+}

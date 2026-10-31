@@ -2,13 +2,28 @@
 
 Zen Ledger is a modular-monolith inventory, salesman ordering, billing and accounts workspace built around a shared API and a responsive admin UI.
 
+## Project layout
+
+- `backend/` is the Render web service. It contains the Express API, MongoDB repository, `render.yaml`, and backend environment template.
+- `frontend/` is the Vercel site. It contains the Vite React app, `vercel.json`, and `VITE_API_URL` environment template.
+
 ## Local setup
 
-1. Install Node.js 20+.
-2. Copy `.env.example` to `.env`, set a long `JWT_SECRET`, and choose `PERSISTENCE=mongo` or the explicit local fallback `PERSISTENCE=json`.
-3. Run `npm install`.
-4. Run `npm run dev`.
-5. Open `http://localhost:5173`.
+Install Node.js 20+, then run each app in its own terminal:
+
+```powershell
+cd backend
+npm install
+npm run dev
+```
+
+```powershell
+cd frontend
+npm install
+npm run dev
+```
+
+Set `VITE_API_URL=http://localhost:4000` in `frontend/.env` for local API calls. The demo login is `owner@example.com` / `ChangeMe123!`.
 
 The local demo login is `owner@example.com` / `ChangeMe123!`. Change it before any real use. The default persistence mode is MongoDB. The JSON fallback is for isolated development only and is never mixed with MongoDB writes.
 
@@ -30,13 +45,13 @@ The environment did not provide MongoDB or permit npm registry downloads during 
 
 Do not use the local JSON datastore for concurrent production traffic, legal/tax reporting, or financial truth.
 
-## Commands
+## Deployment
 
-`npm run dev` starts API on port 4000 and Vite on port 5173.
+Create a Render Web Service with root directory `backend`. Render uses `backend/render.yaml`, builds with `npm install && npm run build`, and starts with `npm start`.
 
-`npm run typecheck` and `npm run build` validate the two TypeScript projects after dependencies are available.
+Create a Vercel Project with root directory `frontend`. Vercel uses `frontend/vercel.json` and `npm run build`.
 
-`npm test` runs the stock invariant tests once dependencies are installed.
+After the Render URL exists, set `frontend`'s `VITE_API_URL` to that URL and set the backend `APP_ORIGIN` to the Vercel URL. Configure `MONGODB_URI` and a unique production `JWT_SECRET` in Render.
 
 ## JSON import
 
