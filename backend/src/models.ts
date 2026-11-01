@@ -1,5 +1,6 @@
 import mongoose,{Schema,Model,SchemaOptions} from 'mongoose';
 const base:SchemaOptions={timestamps:true,versionKey:false};
+// Phone-based salesman accounts use a synthetic unique email for compatibility with legacy data.
 const UserSchema=new Schema({id:{type:String,unique:true,index:true},name:String,email:{type:String,unique:true,index:true},password:String,role:{type:String,enum:['owner','accounts','salesman'],index:true}},base);
 const ProductSchema=new Schema({id:{type:String,unique:true,index:true},name:{type:String,required:true},sku:{type:String,required:true,unique:true,index:true},category:{type:String,required:true,index:true},unit:{type:String,required:true},price:{type:Number,min:0},stock:{type:Number,min:0},reservedStock:{type:Number,min:0,default:0},reorder:{type:Number,min:0},status:{type:String,enum:['active','archived'],index:true}},base);
 const CustomerSchema=new Schema({id:{type:String,unique:true,index:true},name:String,phone:String,balance:{type:Number,min:0},createdBy:{type:String,index:true}},base);
