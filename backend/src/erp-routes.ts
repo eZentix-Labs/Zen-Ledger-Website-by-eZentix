@@ -29,6 +29,23 @@ const salesmanOrAdmin = roleIs(['owner', 'accounts', 'admin', 'salesman']);
 const slug = (value: string) => value.toLowerCase().trim().replace(/[^a-z0-9]+/g, '-').replace(/^-|-$/g, '');
 
 export function registerErpRoutes(app: Express) {
+  const allowedOrigins = new Set([
+    config.APP_ORIGIN,
+    'http://localhost:5173',
+    'http://127.0.0.1:5173',
+  ]);
+  app.use('/api/erp', (req, res, next) => {
+    const origin = req.headers.origin;
+    if (origin && allowedOrigins.has(origin)) {
+      res.header('Access-Control-Allow-Origin', origin);
+      res.header('Vary', 'Origin');
+    }
+    res.header('Access-Control-Allow-Headers', 'Authorization, Content-Type, Idempotency-Key');
+    res.header('Access-Control-Allow-Methods', 'GET, POST, PATCH, PUT, OPTIONS');
+    if (req.method === 'OPTIONS') return res.sendStatus(204);
+    next();
+  });
+
   app.get('/api/erp/catalogue-sources', auth, salesmanOrAdmin, async (_req, res) => {
     res.json(await ErpModels.CatalogueSource.find().sort({ filename: 1 }).lean());
   });
@@ -61,6 +78,34 @@ export function registerErpRoutes(app: Express) {
     const material = await ErpModels.RawMaterial.findByIdAndUpdate(req.params.id, { $set: req.body }, { new: true, runValidators: true });
     if (!material) return res.status(404).json({ error: 'Material not found' });
     res.json(material);
+  });
+  app.get('/api/erp/materials/:id/ledger', auth, admin, async (req, res) => {
+    res.json(await ErpModels.StockLedger.find({ materialId: req.params.id }).sort({ createdAt: -1 }).limit(200).lean());
+  });
+  app.post('/api/erp/materials/:id/ledger', auth, admin, async (req, res) => {
+    const parsed = z.object({
+      quantity: z.number().positive(),
+      movementType: z.enum(['opening', 'purchase', 'adjustment_in', 'adjustment_out', 'consumption', 'return', 'damage']),
+      unit: z.string().min(1),
+      referenceType: z.string().optional(),
+      referenceId: z.string().optional(),
+      notes: z.string().optional(),
+      idempotencyKey: z.string().min(8),
+    }).safeParse(req.body);
+    if (!parsed.success) return res.status(400).json({ error: 'Invalid stock movement', details: parsed.error.flatten() });
+    const material = await ErpModels.RawMaterial.findById(req.params.id).lean();
+    if (!material) return res.status(404).json({ error: 'Material not found' });
+    const existing = await ErpModels.StockLedger.findOne({ idempotencyKey: parsed.data.idempotencyKey });
+    if (existing) return res.status(200).json(existing);
+    const signedQuantity = ['adjustment_out', 'consumption', 'damage'].includes(parsed.data.movementType) ? -parsed.data.quantity : parsed.data.quantity;
+    const movement = await ErpModels.StockLedger.create({
+      materialId: material._id.toString(),
+      materialName: material.name,
+      ...parsed.data,
+      quantity: signedQuantity,
+      createdBy: (req as Request & { user?: UserContext }).user?.id,
+    });
+    res.status(201).json(movement);
   });
 
   app.get('/api/erp/boms', auth, salesmanOrAdmin, async (req, res) => {

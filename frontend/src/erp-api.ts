@@ -35,7 +35,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 export const erpApi = {
-  categories: () => request<{items: ErpCategory[]}>('/api/erp/categories?active=true'),
+  categories: () => request<ErpCategory[] | {items: ErpCategory[]}>('/api/erp/categories?active=true'),
   products: () => request<ErpProduct[] | {items: ErpProduct[]}>('/api/products'),
   assignment: (salesmanId: string) => request<{categories: string[]; products: string[]; salesmanId: string}>(`/api/erp/salesmen/${salesmanId}/assignment`),
   createCategory: (input: Pick<ErpCategory, 'name'> & Partial<Pick<ErpCategory, 'description'>>) => request<ErpCategory>('/api/erp/categories', {method: 'POST', body: JSON.stringify(input)}),

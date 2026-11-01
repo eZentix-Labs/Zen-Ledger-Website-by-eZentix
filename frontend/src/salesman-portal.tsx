@@ -19,7 +19,7 @@ export function SalesmanPortal() {
     Promise.all([erpApi.categories(), erpApi.products()])
       .then(([categoryResult, productResult]) => {
         if (!mounted) return;
-        setCategories(categoryResult.items || []);
+        setCategories(unwrap(categoryResult));
         setProducts(unwrap(productResult));
       })
       .catch((reason: Error) => mounted && setError(reason.message))

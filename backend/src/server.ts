@@ -16,8 +16,8 @@ import {registerErpRoutes} from './erp-routes.js';
 
 
 export const app=express();
-app.use(express.json({limit:'2mb'}));
-setImmediate(() => registerErpRoutes(app));
+  app.use(express.json({limit:'2mb'}));
+  registerErpRoutes(app);
 const allowedOrigins=new Set([config.APP_ORIGIN, 'http://localhost:5173', 'http://127.0.0.1:5173','https://zen-ledger-website-by-e-zentix-8b9g.vercel.app','https://zen-ledger-website-by-e-zentix-8b9g-git-main-ezentic.vercel.app']);
 app.use(helmet());app.use(cors({origin:(origin,callback)=>{if(!origin||allowedOrigins.has(origin))return callback(null,true);return callback(new Error('CORS origin is not allowed'));}}));app.use(express.json({limit:'1mb'}));app.use(rateLimit({windowMs:60_000,max:240,standardHeaders:true,legacyHeaders:false}));
 let db:Store;let repo:Repository;
