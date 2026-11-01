@@ -1,3 +1,6 @@
+import dns  from "node:dns";
+import http from "http";
+dns.setServers(["1.1.1.1", "8.8.8.8"]);
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
@@ -10,8 +13,9 @@ import {JsonRepository,MongoRepository,Repository} from './repository.js';
 import {Order,OrderStatus,Role,Store} from './types.js';
 import {StockError,available,finalizeSale,release,reserve} from './stock.js';
 
+
 export const app=express();
-const allowedOrigins=new Set([config.APP_ORIGIN,'https://zen-ledger-website-by-e-zentix-8b9g.vercel.app','https://zen-ledger-website-by-e-zentix-8b9g-git-main-ezentic.vercel.app']);
+const allowedOrigins=new Set([config.APP_ORIGIN, 'http://localhost:5173', 'http://127.0.0.1:5173','https://zen-ledger-website-by-e-zentix-8b9g.vercel.app','https://zen-ledger-website-by-e-zentix-8b9g-git-main-ezentic.vercel.app']);
 app.use(helmet());app.use(cors({origin:(origin,callback)=>{if(!origin||allowedOrigins.has(origin))return callback(null,true);return callback(new Error('CORS origin is not allowed'));}}));app.use(express.json({limit:'1mb'}));app.use(rateLimit({windowMs:60_000,max:240,standardHeaders:true,legacyHeaders:false}));
 let db:Store;let repo:Repository;
 let lock=Promise.resolve();
@@ -62,3 +66,4 @@ export async function ensureInitialized(){await initialize();}
 export function installTestState(testDb:Store,testRepo:Repository){db=testDb;repo=testRepo;}
 export {bootstrap};
 if(process.env.API_AUTOSTART!=='false'&&!process.env.VERCEL)bootstrap().catch(e=>{console.error('API startup failed:',e instanceof Error?e.message:'unknown error');process.exit(1);});
+
