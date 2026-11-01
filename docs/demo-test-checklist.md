@@ -1,0 +1,22 @@
+# Demo Test Checklist
+
+- [ ] Admin login succeeds.
+- [ ] Salesman login succeeds.
+- [ ] Unauthorized role access is rejected.
+- [ ] Admin creates category.
+- [ ] Admin creates active product.
+- [ ] Salesman sees assigned active catalogue.
+- [ ] Salesman creates/selects customer.
+- [ ] Salesman submits an order once.
+- [ ] Duplicate order submission is rejected or safely deduplicated.
+- [ ] Admin receives the order.
+- [ ] Admin updates order status.
+- [ ] Salesman sees updated status.
+- [ ] Admin creates raw material.
+- [ ] Admin creates BOM version.
+- [ ] Production plan calculates estimated material cost.
+- [ ] Insufficient material prevents production start.
+- [ ] Material movements remain auditable.
+- [ ] Payment idempotency prevents duplicate payment records.
+- [ ] Salesman cannot read another Salesman's assignment/orders.
+- [ ] Empty catalogue, loading, validation, and API error states are usable on mobile.
