@@ -1,0 +1,18 @@
+/* Orders page additions (reuses the Bills page styles in bills/bills.css and the admin theme tokens). */
+.zl .or-more{color:var(--faint)}
+.zl .or-toggle{display:inline-flex;align-items:center;gap:6px;font-size:13px;color:var(--muted);white-space:nowrap}
+.zl .or-card{gap:8px;cursor:default}
+.zl .or-open{display:flex;flex-direction:column;gap:4px;border:0;background:none;padding:0;text-align:left;color:inherit;cursor:pointer;font:inherit}
+.zl .or-steps{list-style:none;margin:0 0 18px;padding:0;display:grid;grid-template-columns:repeat(auto-fit,minmax(90px,1fr));gap:6px}
+.zl .or-steps li{position:relative;display:flex;flex-direction:column;gap:2px;padding:8px 10px;border-radius:10px;border:1px solid var(--line);font-size:12.5px;color:var(--faint)}
+.zl .or-steps li i{width:10px;height:10px;border-radius:50%;border:2px solid var(--line2)}
+.zl .or-steps li b{color:var(--muted);font-weight:600}
+.zl .or-steps li small{font-size:11.5px}
+.zl .or-steps li.done{border-color:color-mix(in srgb,var(--green) 45%,transparent)}
+.zl .or-steps li.done i{background:var(--green);border-color:var(--green)}
+.zl .or-steps li.done b{color:var(--text)}
+.zl .or-steps li.now{background:var(--accent-soft);border-color:var(--accent2)}
+.zl .or-steps li.now i{background:var(--accent2);border-color:var(--accent2)}
+.zl .or-steps li.stop{border-color:color-mix(in srgb,var(--red) 50%,transparent)}
+.zl .or-steps li.stop i{background:var(--red);border-color:var(--red)}
+.zl .or-steps li.stop b{color:var(--red)}

@@ -85,6 +85,9 @@ export const insightsBn: Record<string, string> = {
   '{n} day(s) left': '{n} দিন বাকি', 'No target is assigned to you for this period.': 'এই সময়ের জন্য আপনাকে কোনো লক্ষ্য দেওয়া হয়নি।',
   'Sales count once an order is approved.': 'অর্ডার অনুমোদিত হলে বিক্রি গণ্য হয়।', 'Sales count once an order is dispatched.': 'অর্ডার পাঠানো হলে বিক্রি গণ্য হয়।',
   'Pending, rejected and cancelled orders never count. Collections count after the accounts team verifies them.': 'অপেক্ষমাণ, বাতিল ও প্রত্যাখ্যাত অর্ডার কখনও গণ্য হয় না। হিসাব বিভাগ যাচাই করার পর আদায় গণ্য হয়।',
-  // salesman tab bar
+  // salesman tab bar & tab titles
+  'My target': 'আমার লক্ষ্য', 'My performance': 'আমার পারফরম্যান্স', 'Performance': 'পারফরম্যান্স',
+  'Where you stand against your target, and what to do next': 'লক্ষ্যের তুলনায় আপনি কোথায়, আর এরপর কী করবেন',
+  'Sales, products, customers and collections': 'বিক্রি, পণ্য, গ্রাহক ও আদায়',
   'Dashboard': 'ড্যাশবোর্ড', 'Catalogue': 'ক্যাটালগ', 'My orders': 'আমার অর্ডার', 'Collections': 'আদায়',
 };

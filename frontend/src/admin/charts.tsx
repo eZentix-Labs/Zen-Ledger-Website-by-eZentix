@@ -11,13 +11,13 @@ export function foldOther<T extends {label: string; value: number}>(items: T[], 
   return [...head, {label: otherLabel, value: items.slice(max).reduce((a, x) => a + x.value, 0), color: OTHER} as T & {color: string}];
 }
 
-function useWidth<T extends HTMLElement>() {
+export function useWidth<T extends HTMLElement>() {
   const ref = useRef<T>(null); const [w, setW] = useState(0);
   useEffect(() => { const el = ref.current; if (!el) return; const ro = new ResizeObserver(([e]) => setW(Math.round(e.contentRect.width))); ro.observe(el); setW(el.clientWidth); return () => ro.disconnect(); }, []);
   return [ref, w] as const;
 }
-const niceMax = (v: number) => { if (v <= 0) return 1; const p = 10 ** Math.floor(Math.log10(v)); const n = v / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p; };
-function SrTable({caption, head, rows}: {caption: string; head: string[]; rows: Array<Array<string | number>>}) {
+export const niceMax = (v: number) => { if (v <= 0) return 1; const p = 10 ** Math.floor(Math.log10(v)); const n = v / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p; };
+export function SrTable({caption, head, rows}: {caption: string; head: string[]; rows: Array<Array<string | number>>}) {
   return <table className="zl-sr"><caption>{caption}</caption><thead><tr>{head.map(h => <th key={h}>{h}</th>)}</tr></thead><tbody>{rows.map((r, i) => <tr key={i}>{r.map((c, j) => <td key={j}>{c}</td>)}</tr>)}</tbody></table>;
 }
 

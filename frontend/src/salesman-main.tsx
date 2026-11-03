@@ -6,7 +6,7 @@ import {LanguageProvider} from './i18n.js';
 export {SalesmanPortal} from './salesman-portal';
 
 type Session={id:string;name:string;phone?:string;role:string};
-const API=(import.meta.env.VITE_API_URL||'http://localhost:4000').replace(/\/$/,'');
+const API=import.meta.env.DEV?'':(import.meta.env.VITE_API_URL||'https://zen-ledger-website-by-ezentix.onrender.com').replace(/\/$/,'');
 
 function SalesmanLogin(){
   const [phone,setPhone]=useState('');

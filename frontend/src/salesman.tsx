@@ -1,5 +1,5 @@
 import {lazy, Suspense, useEffect, useMemo, useState} from 'react';
-import {BarChart3, Check, Home, LogOut, Moon, Package, Plus, Search, ShoppingCart, Sun, UserPlus, Wallet, X} from 'lucide-react';
+import {Check, Home, LogOut, Moon, Package, Plus, Search, ShoppingCart, Sun, Target, TrendingUp, UserPlus, Wallet, X} from 'lucide-react';
 import {api} from './api.js';
 import {LanguageSwitcher, useLanguage} from './i18n.js';
 import {day, dateTime, fileUrl, get, imgUrl, label, rupees, send} from './inventory/api';
@@ -14,10 +14,10 @@ type Product = {id: string; name: string; sku: string; category: string; unit: s
 type Customer = {id: string; name: string; phone: string};
 type Order = {id: string; customerName: string; total: number; status: string; createdAt: string; updatedAt?: string; reason?: string; items: {name: string; qty: number}[]};
 type CartLine = {product: Product; qty: number};
-type Tab = 'home' | 'insights' | 'catalog' | 'orders' | 'collect';
-const TABS: Tab[] = ['home', 'insights', 'catalog', 'orders', 'collect'];
-// The old target / performance views now live in Insights; keep those links working.
-const REDIRECTS: Record<string, Tab> = {targets: 'insights', target: 'insights', performance: 'insights'};
+type Tab = 'home' | 'target' | 'performance' | 'catalog' | 'orders' | 'collect';
+const TABS: Tab[] = ['home', 'target', 'performance', 'catalog', 'orders', 'collect'];
+// Keep older links working (#targets, and #insights from the short-lived single Insights tab).
+const REDIRECTS: Record<string, Tab> = {targets: 'target', insights: 'target'};
 const hashKey = () => window.location.hash.replace(/^#\/?/, '').toLowerCase();
 const tabFromHash = (): Tab => REDIRECTS[hashKey()] || (TABS.includes(hashKey() as Tab) ? hashKey() as Tab : 'home');
 const STATUS_TONE: Record<string, any> = {Pending: 'amber', Approved: 'blue', Processing: 'violet', Dispatched: 'violet', Delivered: 'green', Rejected: 'red', Cancelled: 'red'};
@@ -42,8 +42,8 @@ function ChangePassword({forced, onDone, onClose}: {forced: boolean; onDone: () 
   </Dialog>;
 }
 
-// Target cards moved to Insights (insights/TargetList.tsx); the dashboard keeps a one-line summary.
-function Home_({goCatalog, goInsights}: {goCatalog: () => void; goInsights: () => void}) {
+// Target cards moved to the Target tab (insights/TargetList.tsx); the dashboard keeps a one-line summary.
+function Home_({goCatalog, goTarget}: {goCatalog: () => void; goTarget: () => void}) {
   const [d, setD] = useState<any>(null), [err, setErr] = useState('');
   useEffect(() => { get('/api/sales/me/dashboard').then(setD).catch(e => setErr(e.message)); }, []);
   if (err) return <div className="error">{err}</div>;
@@ -51,7 +51,7 @@ function Home_({goCatalog, goInsights}: {goCatalog: () => void; goInsights: () =
   const m = d.thisMonth, s = d.ordersByStatus;
   const current = d.targets.filter((t: any) => t.progress.state !== 'UPCOMING'), upcoming = d.targets.filter((t: any) => t.progress.state === 'UPCOMING');
   return <div style={{display: 'grid', gap: 14}}>
-    <section className="card" style={{padding: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap'}}><div style={{minWidth: 0}}><h3>My targets</h3><p className="muted">{current.length ? current.map((t: any) => `${t.name}: ${t.progress.pct == null ? '—' : `${t.progress.pct}%`}`).join(' · ') : 'No target is assigned to you right now.'}{upcoming.length > 0 ? ` · ${upcoming.length} upcoming` : ''}</p></div><Button small variant="ghost" onClick={goInsights}><BarChart3 size={15} /> Open Insights</Button></section>
+    <section className="card" style={{padding: 16, display: 'flex', justifyContent: 'space-between', alignItems: 'center', gap: 12, flexWrap: 'wrap'}}><div style={{minWidth: 0}}><h3>My targets</h3><p className="muted">{current.length ? current.map((t: any) => `${t.name}: ${t.progress.pct == null ? '—' : `${t.progress.pct}%`}`).join(' · ') : 'No target is assigned to you right now.'}{upcoming.length > 0 ? ` · ${upcoming.length} upcoming` : ''}</p></div><Button small variant="ghost" onClick={goTarget}><Target size={15} /> Open Target</Button></section>
     <section className="inv-tiles" style={{gridTemplateColumns: 'repeat(2,minmax(0,1fr))', margin: 0}}>
       <div className="inv-tile"><span>Sales this month</span><div className="v">{rupees(m.salesPaise)}</div><small>{m.countedOrders} order(s) · today {rupees(d.todayMetrics.salesPaise)}</small></div>
       <div className="inv-tile"><span>Collected (verified)</span><div className="v green">{rupees(m.collectedPaise)}</div>{m.unverifiedCollectionsPaise ? <small>{rupees(m.unverifiedCollectionsPaise)} awaiting verification</small> : <small>this month</small>}</div>
@@ -105,7 +105,7 @@ function Collect({orders}: {orders: Order[]}) {
 function Inner({user, theme, setTheme, onSignOut}: {user: {name: string; mustChangePassword?: boolean}; theme: string; setTheme: (theme: string) => void; onSignOut: () => void}) {
   const {t} = useLanguage();
   const [tab, setTabState] = useState<Tab>(tabFromHash), [products, setProducts] = useState<Product[]>([]), [categories, setCategories] = useState<string[]>([]), [category, setCategory] = useState(''), [customers, setCustomers] = useState<Customer[]>([]), [orders, setOrders] = useState<Order[]>([]), [cart, setCart] = useState<CartLine[]>([]), [q, setQ] = useState(''), [customerId, setCustomerId] = useState(''), [newName, setNewName] = useState(''), [newPhone, setNewPhone] = useState(''), [message, setMessage] = useState(''), [busy, setBusy] = useState(false), [sheet, setSheet] = useState<Product | null>(null), [mustChange, setMustChange] = useState(Boolean(user.mustChangePassword)), [pwd, setPwd] = useState(false);
-  // Tabs are mirrored in the URL hash (#insights, #catalog…) so they can be linked; old #targets / #performance redirect.
+  // Tabs are mirrored in the URL hash (#target, #performance, #catalog…) so they can be linked.
   const setTab = (next: Tab) => { setTabState(next); try { window.history.replaceState(null, '', next === 'home' ? window.location.pathname + window.location.search : `#${next}`); } catch { /* ignore */ } };
   useEffect(() => { if (REDIRECTS[hashKey()]) setTab(tabFromHash()); const sync = () => setTabState(tabFromHash()); window.addEventListener('hashchange', sync); return () => window.removeEventListener('hashchange', sync); }, []);
   const loadCatalog = async () => { const r = await get<any>('/api/sales/catalogue', {q, category, limit: 60}); setProducts(r.items); };
@@ -116,14 +116,14 @@ function Inner({user, theme, setTheme, onSignOut}: {user: {name: string; mustCha
   const add = (product: Product) => setCart(lines => { const ex = lines.find(l => l.product.id === product.id); if (ex && ex.qty >= product.available) { setMessage(`Only ${product.available} of ${product.name} available`); return lines; } return ex ? lines.map(l => l.product.id === product.id ? {...l, qty: l.qty + 1} : l) : [...lines, {product, qty: 1}]; });
   const createCustomer = async () => { if (!newName.trim() || !newPhone.trim()) { setMessage('Enter customer name and phone.'); return; } setBusy(true); try { const c = await api<Customer>('/api/customers', {method: 'POST', body: JSON.stringify({name: newName, phone: newPhone})}); setCustomers(list => [c, ...list]); setCustomerId(c.id); setNewName(''); setNewPhone(''); setMessage('Customer created.'); } catch (e) { setMessage(e instanceof Error ? e.message : 'Unable to create customer'); } finally { setBusy(false); } };
   const submit = async () => { if (!cart.length) { setMessage('Add at least one product.'); return; } setBusy(true); try { let target = customerId; if (!target && newName.trim() && newPhone.trim()) { const created = await api<Customer>('/api/customers', {method: 'POST', body: JSON.stringify({name: newName.trim(), phone: newPhone.trim()})}); setCustomers(list => [created, ...list]); setCustomerId(created.id); target = created.id; setNewName(''); setNewPhone(''); } if (!target) { setMessage('Select a customer or enter a new customer name and phone.'); return; } await api('/api/orders', {method: 'POST', headers: {'Idempotency-Key': crypto.randomUUID()}, body: JSON.stringify({customerId: target, items: cart.map(l => ({productId: l.product.id, qty: l.qty}))})}); setCart([]); setMessage('Order submitted for approval.'); setTab('orders'); await loadRest(); await loadCatalog(); } catch (e) { setMessage(e instanceof Error ? e.message : 'Unable to submit order'); } finally { setBusy(false); } };
-  const NAV: Array<[Tab, string, any]> = [['home', 'Dashboard', Home], ['insights', 'Insights', BarChart3], ['catalog', 'Catalogue', Package], ['orders', 'My orders', ShoppingCart], ['collect', 'Collections', Wallet]];
+  const NAV: Array<[Tab, string, any]> = [['home', 'Dashboard', Home], ['target', 'Target', Target], ['performance', 'Performance', TrendingUp], ['catalog', 'Catalogue', Package], ['orders', 'My orders', ShoppingCart], ['collect', 'Collections', Wallet]];
   return <div className="sales-shell">
     <header className="sales-header"><div className="logo"><div className="logo-mark">Z</div><span>zen ledger</span></div><div className="sales-actions"><LanguageSwitcher /><button className="icon-btn" aria-label="Toggle theme" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}>{theme === 'dark' ? <Sun size={18} /> : <Moon size={18} />}</button><button className="sales-user" style={{background: 'none'}} onClick={() => setPwd(true)} title="Change password">{user.name}</button><button className="icon-btn" aria-label="Sign out" onClick={onSignOut}><LogOut size={18} /></button></div></header>
-    <main className={tab === 'insights' ? 'sales-main wide' : 'sales-main'}>
+    <main className={tab === 'target' || tab === 'performance' ? 'sales-main wide' : 'sales-main'}>
       <div className="sales-tabs" role="tablist" style={{position: 'sticky', top: 0, zIndex: 5, background: 'var(--bg)', padding: '8px 0', margin: '0 0 14px', overflowX: 'auto'}}>{NAV.map(([k, l, I]) => <button key={k} role="tab" aria-selected={tab === k} className={tab === k ? 'active' : ''} onClick={() => setTab(k)}><I size={16} /> {t(l)}{k === 'orders' && <span>{orders.length}</span>}{k === 'catalog' && cart.length > 0 && <span>{cart.reduce((a, l) => a + l.qty, 0)}</span>}</button>)}</div>
       {message && <div className="sales-message">{message}<button onClick={() => setMessage('')} aria-label="Dismiss"><X size={15} /></button></div>}
-      {tab === 'home' && <Home_ goCatalog={() => setTab('catalog')} goInsights={() => setTab('insights')} />}
-      {tab === 'insights' && <Suspense fallback={<p className="muted" role="status">Loading insights…</p>}><InsightsPage go={(next: GoTab) => setTab(next)} /></Suspense>}
+      {tab === 'home' && <Home_ goCatalog={() => setTab('catalog')} goTarget={() => setTab('target')} />}
+      {(tab === 'target' || tab === 'performance') && <Suspense fallback={<p className="muted" role="status">Loading…</p>}><InsightsPage key={tab} view={tab} go={(next: GoTab) => setTab(next)} /></Suspense>}
       {tab === 'catalog' && <>
         <div className="sales-search"><Search size={17} /><input value={q} onChange={e => setQ(e.target.value)} placeholder="Search almirah, design code or SKU" /></div>
         {categories.length > 1 && <div className="inv-segment" style={{marginBottom: 12, overflowX: 'auto', flexWrap: 'nowrap', maxWidth: '100%'}}><button type="button" aria-pressed={!category} onClick={() => setCategory('')}>All</button>{categories.map(c => <button key={c} type="button" aria-pressed={category === c} onClick={() => setCategory(c)} style={{whiteSpace: 'nowrap'}}>{c}</button>)}</div>}

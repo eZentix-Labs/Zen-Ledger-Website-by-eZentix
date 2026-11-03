@@ -17,7 +17,7 @@ export const DELAY_PENDING_H = 24, DELAY_ACTIVE_H = 72;
 const isoDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a YYYY-MM-DD date').refine(s => { const t = Date.parse(s + 'T00:00:00Z'); return Number.isFinite(t) && new Date(t).toISOString().slice(0, 10) === s; }, 'Not a real date');
 const DOW = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
 const dowOf = (d: Date | string) => DOW.indexOf(new Intl.DateTimeFormat('en-GB', {timeZone: tz, weekday: 'short'}).format(new Date(d)));
-const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
+export const sum = (xs: number[]) => xs.reduce((a, b) => a + b, 0);
 
 export type PayStatus = 'PAID' | 'PARTIAL' | 'UNPAID' | 'NA';
 /** Per-order facts. Due exists only for counted (approved-or-later) orders; rejected/cancelled/pending owe nothing yet. */
@@ -41,7 +41,7 @@ export function orderFacts(d: Data, ctx: {paid: Map<string, number>; methods: Ma
 }
 export type Facts = ReturnType<typeof orderFacts>;
 
-async function context(d: Data) {
+export async function context(d: Data) {
   const users: any[] = await Models.users.find().select('id name role active').lean();
   const paid = new Map<string, number>(), methods = new Map<string, Set<string>>();
   for (const p of d.payments.filter(p => p.status === 'VERIFIED')) {
@@ -58,19 +58,19 @@ async function scope(req: Request, d: Data) {
   return me;
 }
 
-type Bucket = 'hour' | 'day' | 'month';
-const bucketOf = (from: string, to: string): Bucket => from === to ? 'hour' : daysIn(from, to) <= 62 ? 'day' : 'month';
-function buckets(from: string, to: string, b: Bucket): string[] {
+export type Bucket = 'hour' | 'day' | 'month';
+export const bucketOf = (from: string, to: string): Bucket => from === to ? 'hour' : daysIn(from, to) <= 62 ? 'day' : 'month';
+export function buckets(from: string, to: string, b: Bucket): string[] {
   if (b === 'hour') return Array.from({length: 24}, (_, h) => String(h));
   if (b === 'day') return Array.from({length: daysIn(from, to)}, (_, i) => shiftIso(from, i));
   const out: string[] = []; let ym = from.slice(0, 7);
   while (ym <= to.slice(0, 7)) { out.push(ym); const y = Number(ym.slice(0, 4)), m = Number(ym.slice(5, 7)); ym = m === 12 ? `${y + 1}-01` : `${y}-${String(m + 1).padStart(2, '0')}`; }
   return out;
 }
-const keyOf = (date: Date | string, b: Bucket) => b === 'hour' ? String(hourOf(date)) : b === 'day' ? ymd(date) : ymd(date).slice(0, 7);
+export const keyOf = (date: Date | string, b: Bucket) => b === 'hour' ? String(hourOf(date)) : b === 'day' ? ymd(date) : ymd(date).slice(0, 7);
 
 /** Period KPIs + per-bucket series (used for sparklines and the trend chart). */
-function periodStats(d: Data, ctx: Awaited<ReturnType<typeof context>>, from: string, to: string, b: Bucket) {
+export function periodStats(d: Data, ctx: Awaited<ReturnType<typeof context>>, from: string, to: string, b: Bucket) {
   const keys = buckets(from, to, b), idx = new Map(keys.map((k, i) => [k, i]));
   const z = () => keys.map(() => 0);
   const s = {sales: z(), orders: z(), counted: z(), collected: z(), cancelled: z(), customers: keys.map(() => new Set<string>())};
@@ -94,7 +94,7 @@ function periodStats(d: Data, ctx: Awaited<ReturnType<typeof context>>, from: st
   };
 }
 
-const range = (req: Request) => {
+export const range = (req: Request) => {
   const q = parse(z.object({from: isoDay.optional(), to: isoDay.optional()}), {from: req.query.from || undefined, to: req.query.to || undefined});
   const to = q.to || today(), from = q.from || to;
   if (from > to) fail(400, 'The start date must be before the end date');

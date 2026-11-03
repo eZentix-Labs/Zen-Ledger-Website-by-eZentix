@@ -1,4 +1,4 @@
-const API_BASE = import.meta.env.VITE_API_URL || 'http://localhost:10000';
+const API_BASE = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || 'https://zen-ledger-website-by-ezentix.onrender.com');
 
 export type ErpCategory = {
   _id: string;

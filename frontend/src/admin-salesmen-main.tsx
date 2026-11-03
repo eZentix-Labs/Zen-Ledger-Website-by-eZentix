@@ -2,7 +2,7 @@ import React,{useEffect,useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import './styles.css';
 
-const API=(import.meta.env.VITE_API_URL||(import.meta.env.DEV?'http://localhost:10000':'https://zen-ledger-website-by-ezentix.onrender.com')).replace(/\/$/,'');
+const API=import.meta.env.DEV?'':(import.meta.env.VITE_API_URL||'https://zen-ledger-website-by-ezentix.onrender.com').replace(/\/$/,'');
 type Salesman={id:string;name:string;phone:string};
 
 function App(){

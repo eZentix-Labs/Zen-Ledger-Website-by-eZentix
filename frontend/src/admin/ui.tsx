@@ -29,10 +29,11 @@ export function periodRange(key: PeriodKey, custom?: {from: string; to: string})
   if (key === 'today') return {key, from: t, to: t};
   if (key === 'week') { const dow = (new Date(t + 'T00:00:00Z').getUTCDay() + 6) % 7; return {key, from: shiftDays(t, -dow), to: t}; }
   if (key === 'month') return {key, from: t.slice(0, 8) + '01', to: t};
-  if (key === 'year') return {key, from: t.slice(0, 5) + '01-01', to: t};
+  // Indian financial year: 1 April – 31 March.
+  if (key === 'year') { const y = Number(t.slice(0, 4)), fy = Number(t.slice(5, 7)) >= 4 ? y : y - 1; return {key, from: `${fy}-04-01`, to: t}; }
   return {key, from: custom?.from || shiftDays(t, -29), to: custom?.to || t};
 }
-export const PERIODS: Array<[PeriodKey, string]> = [['today', 'Today'], ['week', 'This week'], ['month', 'This month'], ['year', 'This year'], ['custom', 'Custom']];
+export const PERIODS: Array<[PeriodKey, string]> = [['today', 'Today'], ['week', 'This week'], ['month', 'This month'], ['year', 'This year (FY)'], ['custom', 'Custom']];
 /** Period remembered per page (a per-viewer convenience; storage may be unavailable). */
 export function usePeriod(storeKey: string, initial: PeriodKey): [Period, (p: Period) => void] {
   const [p, setP] = useState<Period>(() => {

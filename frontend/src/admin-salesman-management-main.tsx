@@ -3,7 +3,7 @@ import {createRoot} from 'react-dom/client';
 import './styles.css';
 import './admin-salesman-management.css';
 
-const API=(import.meta.env.VITE_API_URL||'http://localhost:4000').replace(/\/$/,'');
+const API=import.meta.env.DEV?'':(import.meta.env.VITE_API_URL||'https://zen-ledger-website-by-ezentix.onrender.com').replace(/\/$/,'');
 type Salesman={id:string;name:string;phone?:string;email?:string;role:string};
 
 function AdminSalesmanManagement(){

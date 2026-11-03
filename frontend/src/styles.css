@@ -5,3 +5,39 @@ html[data-theme=light]{--bg:#F1EFF7;--surface:#F8F7FC;--card:#FFFFFF;--card2:#F4
 .modal-backdrop{position:fixed;inset:0;z-index:20;background:rgba(5,4,10,.72);display:grid;place-items:center;padding:20px}.modal-card{width:min(560px,100%);max-height:90vh;overflow:auto;background:var(--card);border:1px solid var(--line);border-radius:18px;box-shadow:0 24px 80px rgba(0,0,0,.35);padding:22px}.modal-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px}.modal-head h2{font-size:19px}.modal-form{display:grid;gap:14px}.modal-form label{display:grid;gap:7px;color:var(--muted);font-size:12px}.modal-form input,.modal-form select{border:1px solid var(--line);background:var(--card2);color:var(--text);border-radius:10px;padding:11px 12px;outline:0}.form-grid{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}.modal-actions{display:flex;justify-content:flex-end;gap:9px;margin-top:4px}.modal-actions .ghost{background:var(--raise);padding:10px 14px;border-radius:10px}.modal-actions .primary{border:0}@media(max-width:620px){.modal-backdrop{padding:12px;align-items:end}.modal-card{max-height:92vh;padding:17px}.form-grid{grid-template-columns:1fr}}
 .global-language{position:fixed;top:18px;right:18px;z-index:30}.language-select{background:var(--raise);border:1px solid var(--line);color:var(--text);border-radius:9px;padding:7px 9px;font-size:12px}.login-shell .global-language{display:none}@media(max-width:620px){.global-language{top:10px;right:10px}.language-select{padding:6px 7px}}
 .global-language{position:fixed;top:18px;right:18px;z-index:30}.language-select{background:var(--raise);border:1px solid var(--line);color:var(--text);border-radius:9px;padding:7px 9px;font-size:12px}.login-shell .global-language{display:none}@media(max-width:620px){.global-language{top:10px;right:10px}.language-select{padding:6px 7px}}
+/* ---------- grouped admin sidebar ---------- */
+aside.side{width:240px;padding:18px 12px 12px;background:linear-gradient(180deg,var(--surface),var(--bg));transition:width .18s ease}
+main{transition:margin-left .18s ease}
+.app:not(.collapsed) main{margin-left:240px}
+aside.side .logo{margin-bottom:18px;padding:0 8px;min-height:36px}
+aside.side .logo-mark{width:34px;height:34px;flex:none;font-size:16px}
+aside.side .logo-text{display:grid;line-height:1.15;min-width:0}
+aside.side .logo-text span{white-space:nowrap}
+aside.side .logo-text small{color:var(--faint);font-size:10.5px;font-weight:500;letter-spacing:.2px}
+aside.side .collapse{top:22px;color:var(--muted);box-shadow:0 2px 8px #0003;transition:.16s}
+aside.side .collapse:hover{color:var(--text);border-color:#8b5cf666}
+aside.side .side-nav{display:block;flex:1;overflow-y:auto;overflow-x:hidden;margin:0 -4px;padding:0 4px;scrollbar-width:thin}
+aside.side .side-group+.side-group{margin-top:14px}
+aside.side .side-label{display:flex;align-items:center;gap:8px;padding:0 12px 6px;color:var(--faint);font-size:10px;font-weight:700;letter-spacing:1.2px;text-transform:uppercase;white-space:nowrap}
+aside.side .side-label::after{content:"";flex:1;height:1px;background:var(--line)}
+aside.side .side-nav button,aside.side .side-bottom button{width:100%;height:38px;padding:0 12px;margin:2px 0;font-size:13.5px;font-weight:500;white-space:nowrap}
+aside.side .side-nav button svg,aside.side .side-bottom button svg{flex:none;opacity:.85}
+aside.side .side-nav button.active{color:var(--text);font-weight:600}
+aside.side .side-nav button.active svg{color:var(--accent-ink,#c4b5fd);opacity:1}
+aside.side .side-bottom{gap:2px;padding-top:10px;margin-top:10px}
+aside.side .side-bottom .signout:hover{background:#f2564d18;color:var(--stop)}
+aside.side .side-user{display:flex;align-items:center;gap:10px;padding:6px 8px 8px;min-width:0}
+aside.side .side-user .avatar{flex:none;width:32px;height:32px}
+aside.side .who{display:grid;min-width:0;line-height:1.25}
+aside.side .who b{font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+aside.side .who small{color:var(--faint);font-size:11px;text-transform:capitalize}
+html[data-theme=light] aside.side{background:var(--surface)}
+html[data-theme=light] aside.side .side-nav button.active{background:linear-gradient(90deg,#7c3aed1c,#7c3aed06)}
+/* collapsed rail (manual toggle, or narrow screens) */
+.collapsed aside.side{width:64px}
+.collapsed aside.side .logo{justify-content:center;padding:0}
+.collapsed aside.side .logo-text,.collapsed aside.side .side-label span,.collapsed aside.side .who,.collapsed aside.side .side-nav span,.collapsed aside.side .side-bottom span{display:none}
+.collapsed aside.side .side-label{padding:0 10px 6px}
+.collapsed aside.side .side-nav button,.collapsed aside.side .side-bottom button{justify-content:center;padding:0}
+.collapsed aside.side .side-user{justify-content:center;padding:6px 0 8px}
+@media(max-width:900px){aside.side{width:64px}.app:not(.collapsed) main{margin-left:64px}aside.side .collapse{display:none}aside.side .logo{justify-content:center;padding:0}aside.side .logo-text,aside.side .side-label span,aside.side .who{display:none}aside.side .side-label{padding:0 10px 6px}aside.side .side-nav button,aside.side .side-bottom button{justify-content:center;padding:0}aside.side .side-user{justify-content:center;padding:6px 0 8px}}

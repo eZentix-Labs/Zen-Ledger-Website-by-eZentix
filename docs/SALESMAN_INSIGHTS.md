@@ -3,9 +3,9 @@
 One page for the salesman that shows how their business is doing: a one-sentence summary, a target ladder, a sales-vs-target chart, top products and customers, health cards, and three things to do this week.
 
 ## Where it lives
-- **Salesman app tab "Insights"** (`salesman.html#insights`). It sits between Dashboard and Catalogue.
-- The old `#targets`, `#target` and `#performance` links redirect to `#insights`.
-- The salesman Dashboard's "My targets" cards moved into Insights (bottom card: "All my targets in this period"). The Dashboard now shows a one-line target summary with an "Open Insights" button.
+- **Salesman app tabs "Target" and "Performance"** (`salesman.html#target`, `#performance`). They sit between Dashboard and Catalogue, share the period picker, and use one API call. Target = summary, target ladder, 3 things to do, all targets. Performance = sales-vs-target chart, top products and customers, health cards.
+- `#targets` and `#insights` redirect to `#target`.
+- The salesman Dashboard's "My targets" cards moved into the Target tab (bottom card: "All my targets in this period"). The Dashboard now shows a one-line target summary with an "Open Target" button.
 - The admin **Targets** and **Performance** pages are unchanged. Admins still set targets there.
 
 ## Backend: `GET /api/sales/me/insights?from=YYYY-MM-DD&to=YYYY-MM-DD[&format=csv]`

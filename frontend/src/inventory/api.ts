@@ -1,6 +1,7 @@
 // Inventory / sales API client. Every mutation carries an Idempotency-Key so a double-click
 // or network retry can never post stock twice (the server returns the first result).
-const API_BASE = (import.meta.env.VITE_API_URL || (import.meta.env.DEV ? 'http://localhost:10000' : 'https://zen-ledger-website-by-ezentix.onrender.com')).replace(/\/$/, '');
+// Dev: same-origin, forwarded by the Vite proxy (vite.config.ts). Production: the deployed API.
+const API_BASE = import.meta.env.DEV ? '' : (import.meta.env.VITE_API_URL || 'https://zen-ledger-website-by-ezentix.onrender.com').replace(/\/$/, '');
 export const apiBase = API_BASE;
 
 export class ApiError extends Error { constructor(message: string, public status: number, public details?: unknown) { super(message); } }

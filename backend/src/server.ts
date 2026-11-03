@@ -17,12 +17,18 @@ import {registerFileRoutes,registerInventoryRoutes} from './inventory/index.js';
 import {registerSalesRoutes,recordLogin} from './sales/index.js';
 import {transitions} from './order-rules.js';
 import {registerAdminRoutes} from './overview/routes.js';
+import {registerInsightsRoutes} from './overview/insights.js';
+import {registerBillRoutes} from './bills/routes.js';
 
 
 export const app=express();
 const allowedOrigins=new Set([config.APP_ORIGIN, 'http://localhost:5173', 'http://127.0.0.1:5173','http://localhost:4173','http://127.0.0.1:4173','https://zen-ledger-website-by-e-zentix-8b9g.vercel.app','https://zen-ledger-website-by-e-zentix-8b9g-git-main-ezentic.vercel.app']);
+// Vite moves to 5174, 5175… when 5173 is busy (e.g. another project), which used to make login fail with
+// "Failed to fetch". Any local dev port is fine: auth is a bearer token, not a cookie, so CORS guards no credentials.
+const localDevOrigin=/^http:\/\/(localhost|127\.0\.0\.1|\[::1\]):\d{2,5}$/;
+const originAllowed=(origin:string)=>allowedOrigins.has(origin)||localDevOrigin.test(origin);
 // Security middleware first; every route (legacy, ERP, inventory) is registered after it.
-app.use(helmet());app.use(cors({origin:(origin,callback)=>{if(!origin||allowedOrigins.has(origin))return callback(null,true);return callback(new Error('CORS origin is not allowed'));}}));app.use(rateLimit({windowMs:60_000,max:240,standardHeaders:true,legacyHeaders:false,skip:()=>config.NODE_ENV==='test'}));
+app.use(helmet());app.use(cors({origin:(origin,callback)=>{if(!origin||originAllowed(origin))return callback(null,true);return callback(new Error('CORS origin is not allowed'));}}));app.use(rateLimit({windowMs:60_000,max:240,standardHeaders:true,legacyHeaders:false,skip:()=>config.NODE_ENV==='test'}));
 // Raw-body upload route must come before the JSON parser.
 registerFileRoutes(app);
 app.use(express.json({limit:'1mb'}));
@@ -30,6 +36,8 @@ registerErpRoutes(app);
 registerInventoryRoutes(app);
 registerSalesRoutes(app);
 registerAdminRoutes(app);
+registerInsightsRoutes(app);
+registerBillRoutes(app);
 let db:Store;let repo:Repository;
 let lock=Promise.resolve();
 let loadedAt=0;
