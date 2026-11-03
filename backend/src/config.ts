@@ -1,6 +1,9 @@
-import 'dotenv/config';
+import dotenv from 'dotenv';
 import path from 'node:path';
 import { z } from 'zod';
+
+// Tests must never pick up backend/.env (it holds the production URI).
+if (process.env.NODE_ENV !== 'test') dotenv.config();
 
 const envSchema=z.object({
   NODE_ENV:z.enum(['development','test','production']).default('development'),

@@ -2,6 +2,7 @@ import React, {useEffect, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {SalesmanApp} from './salesman';
 import './styles.css';
+import {LanguageProvider} from './i18n.js';
 export {SalesmanPortal} from './salesman-portal';
 
 type Session={id:string;name:string;phone?:string;role:string};
@@ -34,4 +35,4 @@ function App(){
   return <SalesmanApp user={user} theme={theme} setTheme={setTheme} onSignOut={()=>{localStorage.removeItem('token');localStorage.removeItem('salesmanUser');setUser(null)}}/>;
 }
 
-createRoot(document.getElementById('root')!).render(<App/>);
+createRoot(document.getElementById('root')!).render(<LanguageProvider><App/></LanguageProvider>);

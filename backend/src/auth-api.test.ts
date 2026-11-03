@@ -36,7 +36,7 @@ describe('isolated order and inventory workflows',()=>{
   it('returns controlled JSON errors for invalid credentials and invalid order quantities',async()=>{
     const invalidLogin=await request('/api/auth/login',{method:'POST',body:JSON.stringify({email:'sales1@test.local',password:'wrong-password'})});
     expect(invalidLogin.status).toBe(401);
-    expect(invalidLogin.body).toEqual({error:'Incorrect email or password'});
+    expect(invalidLogin.body).toEqual({error:'Incorrect phone/email or password'});
     const sales=await login('salesman');
     const invalidOrder=await request('/api/orders',{method:'POST',headers:{Authorization:`Bearer ${sales}`},body:JSON.stringify({customerId:'c1',items:[{productId:'p1',qty:0}]})});
     expect(invalidOrder.status).toBe(400);
