@@ -2,7 +2,7 @@ import React, {useEffect, useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {SalesmanApp} from './salesman';
 import './styles.css';
-import {LanguageProvider} from './i18n.js';
+import {LanguageProvider,LanguageToggle} from './i18n.js';
 export {SalesmanPortal} from './salesman-portal';
 
 type Session={id:string;name:string;phone?:string;role:string};
@@ -24,7 +24,7 @@ function SalesmanLogin(){
       window.location.reload();
     }catch(e){setError(e instanceof Error?e.message:'Login failed');}finally{setBusy(false);}
   }
-  return <main className="login-shell"><section className="login-card"><div className="brand-mark">Z</div><h1>Salesman Login</h1><p>Sign in with the phone number and password provided by your admin.</p><form onSubmit={submit}><label>Phone number<input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="Phone number" autoComplete="username" required/></label><label>Password<input value={password} onChange={e=>setPassword(e.target.value)} type="password" placeholder="Password" autoComplete="current-password" required/></label>{error&&<div className="error">{error}</div>}<button className="primary" disabled={busy}>{busy?'Signing in…':'Sign in'}</button></form></section></main>;
+  return <main className="login-shell"><div className="global-language"><LanguageToggle/></div><section className="login-card"><div className="brand-mark">Z</div><h1>Salesman Login</h1><p>Sign in with the phone number and password provided by your admin.</p><form onSubmit={submit}><label>Phone number<input value={phone} onChange={e=>setPhone(e.target.value)} placeholder="Phone number" autoComplete="username" required/></label><label>Password<input value={password} onChange={e=>setPassword(e.target.value)} type="password" placeholder="Password" autoComplete="current-password" required/></label>{error&&<div className="error">{error}</div>}<button className="primary" disabled={busy}>{busy?'Signing in…':'Sign in'}</button></form></section></main>;
 }
 
 function App(){
