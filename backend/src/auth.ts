@@ -38,7 +38,7 @@ export const ACCOUNTANT_DEFAULTS = [
   'supplier.manage', 'supplierPayment.record',
   'purchase.create', 'purchase.receive', 'bill.manage', 'purchase.return',
   'wastage.report', 'adjustment.request', 'count.manage', 'production.view',
-  'salesman.view', 'salesman.manage', 'target.view', 'payment.record', 'payment.verify',
+  'salesman.view', 'salesman.manage', 'target.view', 'payment.record', 'payment.verify', 'sales.return',
 ] as const;
 export const DELEGABLE = [
   'item.manage', 'purchase.approve', 'bom.manage', 'production.manage', 'production.approve',

@@ -26,9 +26,9 @@ const store = (): Store => ({
 });
 let replSet: any; let repo: MongoRepository; let server: Server; let url = '';
 const tokens: Record<string, string> = {};
-async function call(who: string, method: string, path: string, body?: unknown) {
+async function call(who: string, method: string, path: string, body?: unknown, key = crypto.randomUUID()) {
   const headers: Record<string, string> = {'Content-Type': 'application/json', Authorization: `Bearer ${tokens[who] || ''}`};
-  if (method !== 'GET') headers['Idempotency-Key'] = crypto.randomUUID();
+  if (method !== 'GET') headers['Idempotency-Key'] = key;
   const res = await fetch(url + path, {method, headers, body: body === undefined ? undefined : JSON.stringify(body)});
   const t = await res.text();
   let parsed: any = null; try { parsed = t ? JSON.parse(t) : null; } catch { parsed = t; }
@@ -104,7 +104,7 @@ describe('Bills', () => {
     expect(d.lines[0]).toMatchObject({design: 'FM 901', qty: 2, ratePaise: 1_180_000, totalPaise: 2_360_000, gstRateBps: 1800, gstRateKnown: true, taxablePaise: 2_000_000, cgstPaise: 180_000, sgstPaise: 180_000});
     expect(d.tax).toMatchObject({taxablePaise: 2_000_000, estimated: true, missingRates: 0});
     expect(d.payments).toMatchObject([{amountPaise: 500_000, method: 'upi', status: 'VERIFIED'}]);
-    expect(d.can).toEqual({recordPayment: true, cancel: true});
+    expect(d.can).toEqual({recordPayment: true, cancel: true, return: false});
     const u = ok(await call('owner', 'GET', `/api/admin/bills/${unpaid}`));
     expect(u.tax.missingRates).toBe(1); // p2 has no GST rate: reported, not hidden
     expect((await call('owner', 'GET', '/api/admin/bills/nope')).status).toBe(404);
@@ -131,5 +131,43 @@ describe('Bills', () => {
     const csv = await fetch(`${url}/api/admin/bills?format=csv`, {headers: {Authorization: `Bearer ${tokens.owner}`}});
     expect(csv.headers.get('content-type')).toMatch(/text\/csv/);
     expect((await csv.text()).trim().split('\r\n').pop()).toMatch(/^Total,/);
+  });
+
+  it('returns sold units once, at original cost and sale price, with bill/customer credit', async () => {
+    await Inv.ProductProfile.updateOne({productId: 'p1'}, {$set: {avgCostPaise: 700_000}});
+    const customerId = ok(await call('owner', 'POST', '/api/customers', {name: 'Return Test Customer', phone: '9000000088'})).id;
+    const orderId = ok(await call('owner', 'POST', '/api/orders', {customerId, items: [{productId: 'p1', qty: 2}]})).id;
+    ok(await call('owner', 'PATCH', `/api/orders/${orderId}/status`, {status: 'Approved'}));
+    ok(await call('owner', 'PATCH', `/api/orders/${orderId}/status`, {status: 'Processing'}));
+    ok(await call('owner', 'PATCH', `/api/orders/${orderId}/status`, {status: 'Dispatched'}));
+    ok(await call('owner', 'PATCH', `/api/orders/${orderId}/status`, {status: 'Delivered'}));
+    ok(await call('owner', 'POST', `/api/invoices/from-order/${orderId}`, {}));
+    ok(await call('acc', 'POST', '/api/sales/payments', {orderId, amount: 5000, method: 'cash'}));
+
+    const path = `/api/sales/orders/${orderId}/returns`, key = 'sales-return-double-click-1';
+    expect((await call('s1', 'POST', path, {lineNo: 1, qty: 1, reason: 'Customer changed requirement'}, key)).status).toBe(403);
+    const first = ok(await call('acc', 'POST', path, {lineNo: 1, qty: 1, reason: 'Customer changed requirement'}, key));
+    expect(first).toMatchObject({qty: 1, returnValuePaise: 1_180_000, unitCostPaise: 700_000, costPaise: 700_000, remainingQty: 1});
+    const replay = ok(await call('acc', 'POST', path, {lineNo: 1, qty: 1, reason: 'Customer changed requirement'}, key));
+    expect(replay).toMatchObject({id: first.id, replayed: true});
+    expect((await call('acc', 'POST', path, {lineNo: 1, qty: 2}, 'sales-return-over-return-1')).status).toBe(409);
+    expect((await Models.customers.findOne({id: customerId}).lean() as any).balance).toBe(6_800);
+    expect((await Models.products.findOne({id: 'p1'}).lean() as any).stock).toBe(19);
+
+    const last = ok(await call('owner', 'POST', path, {lineNo: 1, qty: 1, reason: 'Return remainder'}, 'sales-return-final-unit-1'));
+    expect(last.remainingQty).toBe(0);
+    expect((await Models.customers.findOne({id: customerId}).lean() as any).balance).toBe(-5_000);
+    expect((await Models.products.findOne({id: 'p1'}).lean() as any).stock).toBe(20);
+    const bill: any = ok(await call('owner', 'GET', `/api/admin/bills/${orderId}`));
+    expect(bill).toMatchObject({returnedPaise: 2_360_000, duePaise: 0, payStatus: 'PAID'});
+    expect(bill.lines[0]).toMatchObject({lineNo: 1, qty: 2, returnedQty: 2, returnableQty: 0, returnValuePaise: 2_360_000});
+    expect(bill.returns).toHaveLength(2);
+    const order: any = ok(await call('owner', 'GET', `/api/admin/orders/${orderId}`));
+    expect(order.lines[0]).toMatchObject({returnedQty: 2, returnableQty: 0});
+    expect(order.returns).toHaveLength(2);
+    const productDetail: any = ok(await call('owner', 'GET', '/api/inventory/products/p1'));
+    expect(productDetail.stock.salesReturns).toBe(2);
+    expect(productDetail.stockHistory.filter((x: any) => x.type === 'SALES_RETURN')).toHaveLength(2);
+    expect(await Inv.Ledger.countDocuments({itemId: 'p1', type: 'SALES_RETURN', refId: {$in: [first.id, last.id]}})).toBe(2);
   });
 });

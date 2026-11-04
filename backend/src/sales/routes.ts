@@ -11,6 +11,7 @@ import {ErpModels} from '../erp-models.js';
 import {Inv} from '../inventory/models.js';
 import {escapeRegex, fail, paging, parse, route, sendPage} from '../inventory/http.js';
 import {mutate} from '../inventory/txn.js';
+import {post} from '../inventory/stock.js';
 import {MONEY_TARGETS, Sales, TARGET_TYPES} from './models.js';
 
 const text = (max = 200) => z.string().trim().max(max);
@@ -333,6 +334,47 @@ export function registerSalesRoutes(app: Express) {
     if (req.query.customer) filter.customerName = {$regex: escapeRegex(String(req.query.customer)), $options: 'i'};
     const [total, items] = await Promise.all([Sales.Activity.countDocuments(filter), Sales.Activity.find(filter).sort({at: -1}).skip(skip).limit(limit).lean()]);
     sendPage(res, items, total, page, limit);
+  }));
+
+  // ---------------- Sales returns ----------------
+  const returnBody = z.object({lineNo: z.number().int().positive(), qty: z.number().int().positive().max(10000), reason: text(300).optional().default('')});
+  app.post('/api/sales/orders/:id/returns', requireAuth, requirePerm('sales.return'), route(async (req, res) => {
+    const b = parse(returnBody, req.body);
+    const r = await mutate(req, 'SALES_RETURN', async ({session, actor}) => {
+      const order: any = await Models.orders.findOne({id: req.params.id}).session(session).lean();
+      if (!order) fail(404, 'Order not found');
+      const invoice: any = await Models.invoices.findOne({id: order.id}).session(session).lean();
+      if (order.status !== 'Delivered' && !invoice) fail(409, 'Only delivered or invoiced orders can be returned');
+      const line: any = order.items[b.lineNo - 1];
+      if (!line) fail(404, 'Order line not found');
+      if (!Number.isSafeInteger(line.qty) || line.qty <= 0) fail(409, 'Only whole-piece order lines can be returned');
+      const prior: any[] = await Sales.Return.find({orderId: order.id, lineNo: b.lineNo}).session(session).lean();
+      const alreadyReturned = prior.reduce((n, x) => n + x.qty, 0);
+      const remaining = line.qty - alreadyReturned;
+      if (b.qty > remaining) fail(409, `Cannot return ${b.qty}; only ${Math.max(0, remaining)} unit(s) remain returnable`);
+
+      const orderProductQty = order.items.filter((x: any) => x.productId === line.productId).reduce((n: number, x: any) => n + x.qty, 0);
+      const dispatches: any[] = await Inv.Ledger.find({itemKind: 'PRODUCT', itemId: line.productId, type: 'SALES_DISPATCH', refType: 'ORDER', refId: order.id}).session(session).lean();
+      const dispatchedM = dispatches.reduce((n, x) => n + x.qtyOutM, 0);
+      if (!dispatches.length || dispatchedM < orderProductQty * 1000 || dispatches.some(x => x.valuePaise == null)) fail(409, 'Original dispatched cost is unavailable; return was not posted');
+      const dispatchValuePaise = dispatches.reduce((n, x) => n + x.valuePaise, 0);
+      const unitCostPaise = Math.round(dispatchValuePaise / (dispatchedM / 1000) * 10000) / 10000;
+      const unitPricePaise = Math.round(line.price * 100);
+      if (!Number.isSafeInteger(unitPricePaise) || unitPricePaise < 0) fail(409, 'Original order price is invalid');
+      const returnValuePaise = b.qty * unitPricePaise;
+      const costPaise = Math.round(b.qty * unitCostPaise);
+      const [ret] = await Sales.Return.create([{
+        orderId: order.id, lineNo: b.lineNo, productId: line.productId, productName: line.name, qty: b.qty,
+        unitPricePaise, returnValuePaise, unitCostPaise, costPaise, reason: b.reason, returnedBy: actor,
+        idempotencyKey: String(req.header('Idempotency-Key')),
+      }], {session});
+      await post(session, actor, {kind: 'PRODUCT', itemId: line.productId, type: 'SALES_RETURN', dOnM: b.qty * 1000, unitCostPaise, ref: {type: 'SALES_RETURN', id: String(ret._id), number: order.id, line: b.lineNo}, key: `SALES_RETURN:${ret._id}`, reason: b.reason || `Return against order ${order.id}`, approvedBy: actor});
+      const customer = await Models.customers.updateOne({id: order.customerId}, {$inc: {balance: -returnValuePaise / 100}}, {session});
+      if (!customer.matchedCount) fail(409, 'Customer account is unavailable; return was not posted');
+      await activity({type: 'SALES_RETURN', actor, customerId: order.customerId, customerName: order.customerName, orderId: order.id, amountPaise: returnValuePaise, status: 'POSTED', description: `Returned ${b.qty} ${line.unit || 'unit(s)'} of ${line.name}; customer credit ₹${(returnValuePaise / 100).toFixed(2)}`, key: `SALES_RETURN:${ret._id}`}, session);
+      return {id: String(ret._id), orderId: order.id, lineNo: b.lineNo, productId: line.productId, qty: b.qty, unitPricePaise, returnValuePaise, unitCostPaise, costPaise, remainingQty: remaining - b.qty, returnedAt: ret.returnedAt};
+    });
+    res.status(r.replayed ? 200 : 201).json(r);
   }));
 
   // ---------------- Customer payments / collections ----------------

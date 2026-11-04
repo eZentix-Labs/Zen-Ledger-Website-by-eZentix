@@ -1,8 +1,8 @@
-import {useState} from 'react';
+import {useRef, useState} from 'react';
 import {FileText, MessageCircle, Printer, Wallet} from 'lucide-react';
 import {useLanguage} from '../i18n';
 import {Chip, Drawer, ErrorState, METHOD_LABEL, Modal, PayChip, Skeleton, StatusChip, dateTime, day, inr, useApi, useToast} from '../admin/ui';
-import {todayIso} from '../inventory/api';
+import {newKey, todayIso} from '../inventory/api';
 import {FLOW, ordersApi, type OrderDetail, type OrderStatus} from './api';
 
 const ACTION_LABEL: Record<OrderStatus, string> = {Pending: 'Pending', Approved: 'Approve', Processing: 'Start processing', Dispatched: 'Mark dispatched', Delivered: 'Mark delivered', Rejected: 'Reject', Cancelled: 'Cancel order'};
@@ -17,6 +17,9 @@ export function OrderDrawer({id, onClose, onChanged}: {id: string; onClose: () =
   const [ask, setAsk] = useState<OrderStatus | null>(null);
   const [reason, setReason] = useState('');
   const [pay, setPay] = useState({amount: '', method: 'cash', date: todayIso(), reference: ''});
+  const [returnQty, setReturnQty] = useState<Record<number, string>>({});
+  const [returnReason, setReturnReason] = useState('');
+  const returnKey = useRef<{fingerprint: string; key: string} | null>(null);
 
   const act = async (fn: () => Promise<unknown>, ok: string) => {
     setBusy(true);
@@ -34,6 +37,15 @@ export function OrderDrawer({id, onClose, onChanged}: {id: string; onClose: () =
     if (!(amount > 0)) return toast('err', t('Enter the amount received'));
     if (o.counted && Math.round(amount * 100) > o.duePaise) return toast('err', `${t('More than the balance due')} (${inr(o.duePaise)})`);
     if (await act(() => ordersApi.recordPayment(o.id, amount, pay.method, pay.reference, pay.date), `${t('Payment recorded')}: ₹${amount.toLocaleString('en-IN')}`)) setPay({amount: '', method: pay.method, date: todayIso(), reference: ''});
+  };
+  const recordReturn = async (lineNo: number, maxQty: number) => {
+    if (!o) return;
+    const qty = Number(returnQty[lineNo] || '1');
+    if (!Number.isInteger(qty) || qty < 1 || qty > maxQty) return toast('err', `${t('Enter a whole quantity up to')} ${maxQty}`);
+    const fingerprint = JSON.stringify({lineNo, qty, reason: returnReason.trim()});
+    if (!returnKey.current || returnKey.current.fingerprint !== fingerprint) returnKey.current = {fingerprint, key: newKey()};
+    const posted = await act(() => ordersApi.returnLine(o.id, lineNo, qty, returnReason.trim(), returnKey.current!.key), t('Return recorded'));
+    if (posted) { returnKey.current = null; setReturnQty({...returnQty, [lineNo]: ''}); setReturnReason(''); }
   };
 
   return <>
@@ -61,10 +73,22 @@ export function OrderDrawer({id, onClose, onChanged}: {id: string; onClose: () =
             <thead><tr><th>SKU</th><th>{t('Item')}</th><th className="r">{t('Qty')}</th><th className="r">{t('Rate')}</th><th className="r">{t('Amount')}</th></tr></thead>
             <tbody>{o.lines.map(l => <tr key={l.productId}><td className="mono">{l.sku || '—'}</td><td>{l.name}<small className="bl-muted"> {l.category}</small></td><td className="r num">{l.qty}</td><td className="r num">{inr(Math.round(l.price * 100))}</td><td className="r num">{inr(l.lineTotalPaise)}</td></tr>)}</tbody>
           </table></div>
+          {o.can.return && <div className="bl-payform zl-no-print">
+            <label className="zl-field"><span>{t('Return reason')} <small>({t('optional')})</small></span><input className="zl-input" maxLength={300} value={returnReason} onChange={e => setReturnReason(e.target.value)} placeholder={t('Reason for customer return')} /></label>
+            {o.lines.filter(l => l.returnableQty > 0).map(l => <form key={l.lineNo} className="zl-actions" onSubmit={e => { e.preventDefault(); void recordReturn(l.lineNo, l.returnableQty); }}>
+              <span>{l.name} · {t('returnable')}: <b>{l.returnableQty}</b></span>
+              <label className="zl-field"><span>{t('Qty to return')}</span><input className="zl-input" type="number" min="1" max={l.returnableQty} step="1" inputMode="numeric" value={returnQty[l.lineNo] ?? '1'} onChange={e => setReturnQty({...returnQty, [l.lineNo]: e.target.value})} /></label>
+              <button type="submit" className="zl-btn sm" disabled={busy}>{t('Record return')}</button>
+            </form>)}
+          </div>}
           <div className="zl-totals" style={{marginTop: 10}}>
             <span className="grand">{t('Order total')}</span><b className="grand">{inr(o.totalPaise)}</b>
             {o.counted ? <><span>{t('Paid')}</span><b className="green">{inr(o.paidPaise)}</b><span>{t('Balance due')}</span><b className={o.duePaise > 0 ? 'red' : ''}>{inr(o.duePaise)}</b></> : <><span>{t('Payment')}</span><b className="bl-muted">{t('Not billed yet')}</b></>}
           </div>
+        </section>
+
+        <section className="zl-sec"><h4>{t('Returns')}</h4>
+          {o.returns.length ? <ul className="bl-pays">{o.returns.map(r => <li key={r.id}><span><b>{r.productName}</b> · {r.qty} {t('returned')} · {inr(r.valuePaise)}</span><small>{dateTime(r.returnedAt)}{r.by && ` · ${r.by}`}{r.reason && ` · ${r.reason}`}</small></li>)}</ul> : <p className="bl-muted">{t('No returns recorded yet.')}</p>}
         </section>
 
         <section className="zl-sec"><h4>{t('Invoice')}</h4>

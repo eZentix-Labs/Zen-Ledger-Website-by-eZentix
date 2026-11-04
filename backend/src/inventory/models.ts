@@ -11,7 +11,7 @@ const actor = new Schema({id: String, name: String, role: String}, {_id: false})
 const file = new Schema({id: String, url: String, publicId: String, name: String, mime: String, size: Number, view: String}, {_id: false});
 
 export const ITEM_TYPES = ['RAW_MATERIAL', 'COMPONENT', 'CONSUMABLE', 'PACKAGING', 'SPARE_PART', 'SEMI_FINISHED', 'OTHER'] as const;
-export const LEDGER_TYPES = ['OPENING', 'PURCHASE_RECEIPT', 'PURCHASE_RETURN', 'RESERVATION', 'RESERVATION_RELEASE', 'MATERIAL_ISSUE', 'MATERIAL_RETURN', 'PRODUCTION_OUTPUT', 'SALES_DISPATCH', 'SALES_RETURN', 'WASTAGE', 'ADJUSTMENT_IN', 'ADJUSTMENT_OUT', 'COUNT_ADJUSTMENT', 'REVERSAL'] as const;
+export const LEDGER_TYPES = ['OPENING', 'PURCHASE_RECEIPT', 'PURCHASE_RETURN', 'RESERVATION', 'RESERVATION_RELEASE', 'MATERIAL_ISSUE', 'MATERIAL_RETURN', 'PRODUCTION_OUTPUT', 'PRODUCTION_COST_ADJUSTMENT', 'PRODUCTION_VARIANCE', 'SALES_DISPATCH', 'SALES_RETURN', 'WASTAGE', 'ADJUSTMENT_IN', 'ADJUSTMENT_OUT', 'COUNT_ADJUSTMENT', 'REVERSAL'] as const;
 
 // ---------- Item master (repaired ErpRawMaterial) ----------
 const itemSchema = new Schema({

@@ -119,14 +119,14 @@ export function Rupee({d}: {d: AdminInsights}) {
 // ---------------- B2 billed vs collected ----------------
 export function Trend({d}: {d: AdminInsights}) {
   const {t, s} = useI(); const tr = d.trend;
+  const hasTrendData = [...tr.billed, ...tr.collected, ...tr.previousBilled, ...tr.previousCollected].some(v => v > 0);
   const labels = useMemo(() => tr.keys.map(k => bucketLabel(k, d.bucket)), [tr.keys, d.bucket]);
   const unit = d.bucket === 'hour' ? t('hour') : d.bucket === 'day' ? t('day') : t('month');
   const methods = d.rupee.methods.map((m, i) => ({label: t(METHOD_LABEL[m.method] || m.method), value: m.valuePaise, color: SERIES[i] || OTHER}));
   return <Card title={t('Billed vs collected')} hint={s('By {unit} · dashed line = previous period billed', {unit})} aside={tr.best && <Chip tone="violet">{s('Best {unit}: {key} ({amount})', {unit, key: bucketLabel(tr.best.key, d.bucket), amount: short(tr.best.valuePaise)})}</Chip>}>
-    {!tr.billed.some(v => v > 0) && !tr.collected.some(v => v > 0) ? <Compact>{t('Nothing billed or collected in this period.')}</Compact> : <>
-      <ComboChart labels={labels} bars={tr.billed} line={tr.collected} prev={tr.previousBilled} format={money} axisFormat={short} ariaLabel={t('Billed and collected over time')} names={{bars: t('Billed'), line: t('Collected'), prev: t('Previous period')}} />
-      <div className="zl-legend ins-legend"><span><i style={{background: 'var(--accent2)'}} />{t('Billed')}</span><span><i style={{background: 'var(--cyan)', height: 3}} />{t('Collected')}</span><span><i className="dash" />{t('Previous period')}</span></div>
-    </>}
+    {!hasTrendData && <Compact>{t('Nothing billed or collected in this period.')}</Compact>}
+    <ComboChart labels={labels} bars={tr.billed} line={tr.collected} prev={tr.previousBilled} format={money} axisFormat={short} ariaLabel={t('Billed and collected over time')} names={{bars: t('Billed'), line: t('Collected'), prev: t('Previous period')}} />
+    <div className="zl-legend ins-legend"><span><i style={{background: 'var(--accent2)'}} />{t('Billed')}</span><span><i style={{background: 'var(--cyan)', height: 3}} />{t('Collected')}</span><span><i className="dash" />{t('Previous period')}</span></div>
     <h4 className="ins-sub">{t('Collected by payment mode')}</h4>
     {methods.length ? <StackBar ariaLabel={t('Collected by payment mode')} format={money} items={methods} /> : <p className="zl-note">{t('No verified collections in this period.')}</p>}
   </Card>;

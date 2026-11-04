@@ -60,6 +60,7 @@ function Body({go}: {go: (p: Page) => void}) {
         <Summary d={d} periodName={periodName} />
         <Kpis d={d} go={go} />
         <Footnote d={d} />
+        {!full && <div className="zl-grid zl-g2"><div style={{gridColumn: '1 / -1'}}><Trend d={d} /></div></div>}
         <div className="zl-grid zl-g2">
           <Ladder d={d} go={go} />
           {full ? (hide('money') ? null : <MoneyOut d={d} go={go} />) : <Todo d={d} go={go} />}

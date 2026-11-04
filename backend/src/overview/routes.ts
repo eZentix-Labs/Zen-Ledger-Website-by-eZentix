@@ -8,9 +8,11 @@ import {permissionsFor, requireAuth, requirePerm, sessionUser} from '../auth.js'
 import {Models} from '../models.js';
 import {Inv} from '../inventory/models.js';
 import {Sales} from '../sales/models.js';
+import {ErpModels} from '../erp-models.js';
 import {fail, parse, route} from '../inventory/http.js';
-import {COUNTED, Data, SLIP_DAYS, countedDate, daysIn, hourOf, inRange, loadData, paise, previousRange, shiftIso, targetProgress, today, tz, ymd} from '../sales/routes.js';
+import {COUNTED, Data, SLIP_DAYS, countedDate, daysIn, hourOf, inRange, loadData, paise, previousRange, salesPolicy, shiftIso, targetProgress, today, tz, ymd} from '../sales/routes.js';
 import {transitions} from '../order-rules.js';
+import {percentChange, profitSummary, receivablesAgeing} from './calculations.js';
 
 /** An order still Pending after this many hours, or Approved/Processing after DELAY_ACTIVE_H, is "delayed". */
 export const DELAY_PENDING_H = 24, DELAY_ACTIVE_H = 72;
@@ -106,13 +108,72 @@ export function registerAdminRoutes(app: Express) {
   // ---------------- Overview ----------------
   app.get('/api/admin/overview', requireAuth, requirePerm('reports.view'), route(async (req, res) => {
     const {from, to} = range(req);
-    const d = await loadData(); await scope(req, d);
+    // This endpoint does not need invoice snapshots or full customer/profile documents.
+    // Keep just the fields used by the shared sales policy calculations to reduce payload and heap cost.
+    const [orders, customers, payments, policy] = await Promise.all([
+      Models.orders.find().select('id status createdAt updatedAt approvedAt dispatchedAt customerId customerName createdBy total items').lean(),
+      Models.customers.find().select('id phone').lean(),
+      ErpModels.Payment.find().select('orderId status amount method paymentDate salesmanId').lean(),
+      salesPolicy(),
+    ]);
+    const d: Data = {orders, customers, invoices: [], payments, policy}; await scope(req, d);
     const ctx = await context(d), b = bucketOf(from, to), prev = previousRange(from, to);
     const cur = periodStats(d, ctx, from, to, b), before = periodStats(d, ctx, prev.from, prev.to, b);
     const facts = d.orders.map(o => orderFacts(d, ctx, o));
     const fm = new Map(facts.map(f => [f.id, f]));
-    const products: any[] = await Models.products.find().select('id name category stock reservedStock reorder status').lean();
+    const soldProductIds = [...new Set(cur.counted.flatMap(o => o.items.map((l: any) => l.productId)))];
+    const products: any[] = soldProductIds.length ? await Models.products.find({id: {$in: soldProductIds}, status: 'active'}).select('id name category').lean() : [];
     const pm = new Map(products.map(p => [p.id, p]));
+    const canSeeCost = (await permissionsFor(sessionUser(req).role)).includes('inventory.valuation');
+    const [productStockRows, itemStockRows, lowProducts, lowItems, productProfiles, bomIds, payableAgg, productionAgg, lateProduction] = await Promise.all([
+      Models.products.aggregate([
+        {$match: {status: 'active'}},
+        {$lookup: {from: Inv.ProductProfile.collection.name, localField: 'id', foreignField: 'productId', as: 'profile'}},
+        {$unwind: {path: '$profile', preserveNullAndEmptyArrays: true}},
+        {$project: {available: {$subtract: ['$stock', {$ifNull: ['$reservedStock', 0]}]}, stock: {$ifNull: ['$stock', 0]}, reorder: {$ifNull: ['$reorder', 0]}, cost: '$profile.avgCostPaise'}},
+        {$group: {_id: null, tracked: {$sum: 1}, low: {$sum: {$cond: [{$and: [{$gt: ['$reorder', 0]}, {$lte: ['$available', '$reorder']}]}, 1, 0]}}, out: {$sum: {$cond: [{$lte: ['$available', 0]}, 1, 0]}}, valuePaise: {$sum: {$cond: [{$and: [{$gt: ['$stock', 0]}, {$ne: ['$cost', null]}]}, {$round: {$multiply: ['$stock', '$cost']}}, 0]}}, uncosted: {$sum: {$cond: [{$and: [{$gt: ['$stock', 0]}, {$eq: ['$cost', null]}]}, 1, 0]}}}},
+      ]),
+      Inv.Item.aggregate([
+        {$match: {status: 'ACTIVE'}},
+        {$project: {available: {$subtract: ['$onHandM', {$ifNull: ['$reservedM', 0]}]}, onHandM: {$ifNull: ['$onHandM', 0]}, reorder: {$ifNull: ['$reorderLevelM', 0]}, cost: '$avgCostPaise'}},
+        {$group: {_id: null, tracked: {$sum: 1}, low: {$sum: {$cond: [{$and: [{$gt: ['$reorder', 0]}, {$lte: ['$available', '$reorder']}]}, 1, 0]}}, out: {$sum: {$cond: [{$lte: ['$available', 0]}, 1, 0]}}, valuePaise: {$sum: {$cond: [{$and: [{$gt: ['$onHandM', 0]}, {$ne: ['$cost', null]}]}, {$round: {$multiply: [{$divide: ['$onHandM', 1000]}, '$cost']}}, 0]}}, uncosted: {$sum: {$cond: [{$and: [{$gt: ['$onHandM', 0]}, {$eq: ['$cost', null]}]}, 1, 0]}}}},
+      ]),
+      Models.products.find({status: 'active', reorder: {$gt: 0}, $expr: {$lte: [{$subtract: ['$stock', {$ifNull: ['$reservedStock', 0]}]}, '$reorder']}}).select('id sku name stock reservedStock reorder').sort({stock: 1}).limit(5).lean(),
+      Inv.Item.find({status: 'ACTIVE', reorderLevelM: {$gt: 0}, $expr: {$lte: [{$subtract: ['$onHandM', {$ifNull: ['$reservedM', 0]}]}, '$reorderLevelM']}}).select('name code stockUnit onHandM reservedM reorderLevelM').sort({onHandM: 1}).limit(5).lean(),
+      canSeeCost && soldProductIds.length ? Inv.ProductProfile.find({productId: {$in: soldProductIds}}).select('productId gstRateBps avgCostPaise').lean() : [],
+      Inv.Bom.distinct('productId', {status: 'ACTIVE'}),
+      Inv.Bill.aggregate([
+        {$match: {status: {$in: ['POSTED', 'PARTIALLY_PAID']}}},
+        {$addFields: {balance: {$max: [0, {$subtract: [{$ifNull: ['$totalPaise', 0]}, {$ifNull: ['$paidPaise', 0]}]}]}}},
+        {$group: {_id: null, duePaise: {$sum: '$balance'}, bills: {$sum: {$cond: [{$gt: ['$balance', 0]}, 1, 0]}}, overduePaise: {$sum: {$cond: [{$and: [{$gt: ['$balance', 0]}, {$lt: ['$dueDate', new Date(`${today()}T00:00:00+05:30`)]}]}, '$balance', 0]}}, missingDueDate: {$sum: {$cond: [{$and: [{$gt: ['$balance', 0]}, {$eq: ['$dueDate', null]}]}, 1, 0]}}}},
+      ]),
+      Inv.Production.aggregate([
+        {$match: {status: {$in: ['APPROVED', 'MATERIALS_RESERVED', 'IN_PROGRESS', 'QUALITY_CHECK']}}},
+        {$group: {_id: null, active: {$sum: 1}, late: {$sum: {$cond: [{$lt: ['$expectedDate', new Date(`${today()}T00:00:00+05:30`)]}, 1, 0]}}}},
+      ]),
+      Inv.Production.find({status: {$in: ['APPROVED', 'MATERIALS_RESERVED', 'IN_PROGRESS', 'QUALITY_CHECK']}, expectedDate: {$lt: new Date(`${today()}T00:00:00+05:30`)}}).select('number productName status expectedDate').sort({expectedDate: 1}).limit(5).lean(),
+    ]);
+    const stock = {
+      finishedGoods: productStockRows[0] || {tracked: 0, low: 0, out: 0, valuePaise: 0, uncosted: 0},
+      materials: itemStockRows[0] || {tracked: 0, low: 0, out: 0, valuePaise: 0, uncosted: 0},
+    };
+    const knownStockValuePaise = (stock.finishedGoods.valuePaise || 0) + (stock.materials.valuePaise || 0);
+    const uncostedStockItems = (stock.finishedGoods.uncosted || 0) + (stock.materials.uncosted || 0);
+    const profiles = new Map(productProfiles.map((p: any) => [p.productId, {gstRateBps: p.gstRateBps ?? null, avgCostPaise: p.avgCostPaise ?? null}]));
+    const profit = canSeeCost ? profitSummary(cur.counted, profiles) : null;
+    const activeBoms = new Set(bomIds.map(String));
+    const quality = {
+      productsMissingBom: await Models.products.countDocuments({status: 'active', id: {$nin: [...activeBoms]}}),
+      negativeFinishedGoods: await Models.products.countDocuments({status: 'active', stock: {$lt: 0}}),
+      negativeMaterials: await Inv.Item.countDocuments({status: 'ACTIVE', onHandM: {$lt: 0}}),
+      productsMissingCost: profit?.missingCostProducts.length ?? null,
+      productsMissingGst: profit?.missingGstProducts.length ?? null,
+    };
+    const lowStock = {finishedGoods: productStockRows[0]?.low || 0, materials: itemStockRows[0]?.low || 0};
+    const stockAlerts = [
+      ...lowProducts.map(p => ({id: p.id, name: p.name, available: p.stock - (p.reservedStock || 0), reorder: p.reorder, unit: 'piece', kind: 'finishedGood'})),
+      ...lowItems.map(i => ({id: String(i._id), name: i.name, available: i.onHandM - (i.reservedM || 0), reorder: i.reorderLevelM, unit: i.stockUnit, kind: 'material'})),
+    ].slice(0, 8);
 
     const statusCounts: Record<string, number> = {};
     for (const o of cur.created) statusCounts[o.status] = (statusCounts[o.status] || 0) + 1;
@@ -151,13 +212,24 @@ export function registerAdminRoutes(app: Express) {
 
     const now = today(), due = facts.filter(f => f.duePaise > 0);
     const oldestDue = due.slice().sort((a, b) => (a.countedOn || '').localeCompare(b.countedOn || ''))[0];
-    const lowStock = products.filter(p => p.status === 'active' && p.reorder > 0 && p.stock - (p.reservedStock || 0) <= p.reorder);
     const delayed = facts.filter(f => f.delayed).sort((a, b) => b.ageHours - a.ageHours);
     const unverified = d.payments.filter(p => p.status === 'UNVERIFIED' && fm.has(p.orderId));
-    const pctDelta = (a: number, b2: number) => b2 ? Math.round((a - b2) / b2 * 1000) / 10 : null;
+    const ageing = receivablesAgeing(due, now);
+    const topDistributors = [...cur.counted.reduce((m: Map<string, any>, o: any) => {
+      const x = m.get(o.customerId) || {id: o.customerId, name: o.customerName, salesPaise: 0, orders: 0};
+      x.salesPaise += paise(o.total); x.orders++; m.set(o.customerId, x); return m;
+    }, new Map<string, any>()).values()].sort((a, b) => b.salesPaise - a.salesPaise).slice(0, 5);
+    const salesmenPerformance = ctx.userList.filter(u => u.role === 'salesman').map(u => {
+      const salesPaise = sum(cur.counted.filter(o => o.createdBy === u.id).map(o => paise(o.total)));
+      const ts = targets.filter(t => t.salesmanId === u.id);
+      const targetPaise = ts.length ? sum(ts.map(t => t.targetValue)) : null;
+      const achievedPaise = ts.length ? sum(ts.map(t => targetProgress(t, d).achieved)) : null;
+      return {id: u.id, name: u.name, salesPaise, targetPaise, achievedPaise, targetPct: targetPaise ? Math.round((achievedPaise || 0) / targetPaise * 1000) / 10 : null};
+    }).sort((a, b) => b.salesPaise - a.salesPaise).slice(0, 5);
+    const pctDelta = percentChange;
 
     res.json({
-      from, to, previous: prev, bucket: b, keys: cur.keys, policy: d.policy,
+      from, to, previous: prev, bucket: b, keys: cur.keys, policy: d.policy, generatedAt: new Date().toISOString(), access: {valuation: canSeeCost},
       kpi: cur.kpi, previousKpi: before.kpi, series: cur.series, previousSeries: before.series,
       deltas: Object.fromEntries(Object.keys(cur.kpi).map(k => [k, pctDelta((cur.kpi as any)[k], (before.kpi as any)[k])])),
       duePaise: sum(due.map(f => f.duePaise)),
@@ -168,13 +240,18 @@ export function registerAdminRoutes(app: Express) {
       heatmap: {from: hmFrom, to, days: DOW, cells: heat},
       busiestHour: (() => { const h = Array(24).fill(0); for (const o of cur.created) h[hourOf(o.createdAt)]++; const m = Math.max(...h); return m ? h.indexOf(m) : null; })(),
       target,
-      operations: {pending: facts.filter(f => f.status === 'Pending').length, inProgress: facts.filter(f => ['Approved', 'Processing'].includes(f.status)).length, dispatched: facts.filter(f => f.status === 'Dispatched').length, delayed: delayed.length, lowStock: lowStock.length, delayRule: {pendingHours: DELAY_PENDING_H, activeHours: DELAY_ACTIVE_H}},
+      operations: {pending: facts.filter(f => f.status === 'Pending').length, readyToDispatch: facts.filter(f => ['Approved', 'Processing'].includes(f.status)).length, inProgress: facts.filter(f => ['Approved', 'Processing'].includes(f.status)).length, dispatched: facts.filter(f => f.status === 'Dispatched').length, delayed: delayed.length, lowStock: lowStock.finishedGoods + lowStock.materials, lowStockFinishedGoods: lowStock.finishedGoods, lowStockMaterials: lowStock.materials, outOfStock: (stock.finishedGoods.out || 0) + (stock.materials.out || 0), delayRule: {pendingHours: DELAY_PENDING_H, activeHours: DELAY_ACTIVE_H}},
       management: {salesmen: salesmen.length, activeSalesmen: salesmen.filter(s => s.active !== false).length, topPerformer: topId ? {id: topId[0], name: ctx.users.get(topId[0])?.name, salesPaise: topId[1]} : null, slippingCustomers: slipping, slipDays: SLIP_DAYS, customers: d.customers.length},
-      finance: {duePaise: sum(due.map(f => f.duePaise)), dueTodayPaise: sum(due.filter(f => f.countedOn === now).map(f => f.duePaise)), dueOlderPaise: sum(due.filter(f => f.countedOn !== now).map(f => f.duePaise)), dueOrders: due.length, oldestDue: oldestDue ? {id: oldestDue.id, number: oldestDue.number, customerName: oldestDue.customerName, duePaise: oldestDue.duePaise, since: oldestDue.countedOn, days: oldestDue.countedOn ? daysIn(oldestDue.countedOn, now) - 1 : null} : null, collectedTodayPaise: sum(d.payments.filter(p => p.status === 'VERIFIED' && inRange(p.paymentDate, now, now) && fm.has(p.orderId)).map(p => paise(p.amount))), unverifiedPaise: sum(unverified.map(p => paise(p.amount))), unverifiedCount: unverified.length},
+      finance: {duePaise: sum(due.map(f => f.duePaise)), dueTodayPaise: sum(due.filter(f => f.countedOn === now).map(f => f.duePaise)), dueOlderPaise: sum(due.filter(f => f.countedOn !== now).map(f => f.duePaise)), dueOrders: due.length, ageing, oldestDue: oldestDue ? {id: oldestDue.id, number: oldestDue.number, customerName: oldestDue.customerName, duePaise: oldestDue.duePaise, since: oldestDue.countedOn, days: oldestDue.countedOn ? daysIn(oldestDue.countedOn, now) - 1 : null} : null, collectedTodayPaise: sum(d.payments.filter(p => p.status === 'VERIFIED' && inRange(p.paymentDate, now, now) && fm.has(p.orderId)).map(p => paise(p.amount))), unverifiedPaise: sum(unverified.map(p => paise(p.amount))), unverifiedCount: unverified.length},
+      stock: {finishedGoods: stock.finishedGoods, materials: stock.materials, alerts: stockAlerts, stockValuePaise: canSeeCost && (knownStockValuePaise > 0 || uncostedStockItems === 0) ? knownStockValuePaise : null, uncostedStockItems: canSeeCost ? uncostedStockItems : null, valuationBasis: canSeeCost ? 'Known weighted-average cost subtotal; uncosted stock excluded.' : null},
+      production: {active: productionAgg[0]?.active || 0, late: productionAgg[0]?.late || 0, lateOrders: lateProduction.map(p => ({id: String(p._id), number: p.number, productName: p.productName, status: p.status, expectedDate: p.expectedDate}))},
+      supplierPayables: {duePaise: canSeeCost ? payableAgg[0]?.duePaise || 0 : null, bills: canSeeCost ? payableAgg[0]?.bills || 0 : null, overduePaise: canSeeCost ? payableAgg[0]?.overduePaise || 0 : null, missingDueDate: canSeeCost ? payableAgg[0]?.missingDueDate || 0 : null},
+      profit, quality,
+      topDistributors, salesmenPerformance,
       recent: facts.slice().sort((a, b2) => b2.createdAt.localeCompare(a.createdAt)).slice(0, 10),
       alerts: {
         delayed: delayed.slice(0, 5).map(f => ({id: f.id, number: f.number, customerName: f.customerName, status: f.status, ageHours: f.ageHours})),
-        lowStock: lowStock.slice(0, 5).map(p => ({id: p.id, name: p.name, available: p.stock - (p.reservedStock || 0), reorder: p.reorder})),
+        lowStock: stockAlerts,
         oldDues: due.filter(f => f.countedOn && daysIn(f.countedOn, now) > 30).sort((a, b2) => (a.countedOn || '').localeCompare(b2.countedOn || '')).slice(0, 5).map(f => ({id: f.id, number: f.number, customerName: f.customerName, duePaise: f.duePaise, days: daysIn(f.countedOn!, now) - 1})),
         unverifiedPayments: unverified.length,
       },
@@ -239,19 +316,27 @@ export function registerAdminRoutes(app: Express) {
     const ctx = await context(d);
     const products: any[] = await Models.products.find({id: {$in: o.items.map((i: any) => i.productId)}}).select('id sku category').lean();
     const pm = new Map(products.map(p => [p.id, p]));
-    const [timeline, invoice] = await Promise.all([Sales.Activity.find({orderId: o.id}).sort({at: 1}).lean(), Models.invoices.findOne({id: o.id}).lean()]);
+    const [timeline, invoice, returns] = await Promise.all([Sales.Activity.find({orderId: o.id}).sort({at: 1}).lean(), Models.invoices.findOne({id: o.id}).lean(), Sales.Return.find({orderId: o.id}).sort({returnedAt: 1}).lean()]);
     const customer: any = d.customers.find(c => c.id === o.customerId) || null;
     const perms = await permissionsFor(me.role);
+    const returnedPaise = returns.reduce((n: number, x: any) => n + x.returnValuePaise, 0);
+    const baseFacts = orderFacts(d, ctx, o);
+    const duePaise = Math.max(0, baseFacts.duePaise - returnedPaise);
+    const payStatus = !baseFacts.counted ? 'NA' : duePaise === 0 ? 'PAID' : baseFacts.paidPaise > 0 ? 'PARTIAL' : 'UNPAID';
     res.json({
-      ...orderFacts(d, ctx, o),
-      lines: o.items.map((l: any) => ({...l, sku: pm.get(l.productId)?.sku || '', category: pm.get(l.productId)?.category || '', lineTotalPaise: paise(l.qty * l.price)})),
+      ...baseFacts, returnedPaise, duePaise, payStatus,
+      returns: returns.map((x: any) => ({id: String(x._id), lineNo: x.lineNo, productId: x.productId, productName: x.productName, qty: x.qty, valuePaise: x.returnValuePaise, reason: x.reason || '', returnedAt: x.returnedAt, by: x.returnedBy?.name || ''})),
+      lines: o.items.map((l: any, i: number) => {
+        const lineReturns = returns.filter((x: any) => x.lineNo === i + 1), returnedQty = lineReturns.reduce((n: number, x: any) => n + x.qty, 0);
+        return {...l, lineNo: i + 1, returnedQty, returnableQty: Math.max(0, l.qty - returnedQty), returnValuePaise: lineReturns.reduce((n: number, x: any) => n + x.returnValuePaise, 0), returns: lineReturns.map((x: any) => ({id: String(x._id), qty: x.qty, valuePaise: x.returnValuePaise, reason: x.reason || '', returnedAt: x.returnedAt})), sku: pm.get(l.productId)?.sku || '', category: pm.get(l.productId)?.category || '', lineTotalPaise: paise(l.qty * l.price)};
+      }),
       customer: customer && {id: customer.id, name: customer.name, phone: customer.phone, address: customer.address || '', balance: customer.balance},
       payments: d.payments.filter(p => p.orderId === o.id).sort((a, b) => String(b.createdAt).localeCompare(String(a.createdAt))).map(p => ({id: String(p._id), amountPaise: paise(p.amount), method: p.method, status: p.status, paymentDate: p.paymentDate, reference: p.reference, recordedBy: ctx.users.get(p.recordedBy)?.name || p.recordedBy || null, createdAt: p.createdAt})),
       timeline: timeline.map((a: any) => ({at: a.at, type: a.type, by: a.actor?.name || null, description: a.description})),
       stamps: {createdAt: o.createdAt, approvedAt: o.approvedAt || null, dispatchedAt: o.dispatchedAt || null, deliveredAt: o.deliveredAt || null, closedAt: o.closedAt || null, reason: o.reason || null, statusBy: o.statusBy || null},
       invoice: invoice ? {id: (invoice as any).id, number: (invoice as any).number, total: (invoice as any).total, paid: (invoice as any).paid, status: (invoice as any).status, createdAt: (invoice as any).createdAt} : null,
       next: me.role === 'salesman' ? [] : transitions[o.status as keyof typeof transitions] || [],
-      can: {changeStatus: me.role !== 'salesman', recordPayment: me.role === 'salesman' || perms.includes('payment.record'), invoice: me.role !== 'salesman' && !invoice && ['Approved', 'Processing', 'Dispatched', 'Delivered'].includes(o.status), duplicate: me.role === 'owner'},
+      can: {changeStatus: me.role !== 'salesman', recordPayment: me.role === 'salesman' || perms.includes('payment.record'), invoice: me.role !== 'salesman' && !invoice && ['Approved', 'Processing', 'Dispatched', 'Delivered'].includes(o.status), duplicate: me.role === 'owner', return: perms.includes('sales.return') && (o.status === 'Delivered' || Boolean(invoice))},
     });
   }));
 }

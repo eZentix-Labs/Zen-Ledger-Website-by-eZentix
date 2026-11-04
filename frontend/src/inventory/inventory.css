@@ -130,3 +130,14 @@ html[data-theme=light] .s1{background:#2a78d6}html[data-theme=light] .s2{backgro
 @media print{aside,.inv-addbar,.inv-tabs,.inv-actions,.inv-filters,.inv-pager{display:none!important}main{margin:0!important}.inv{padding:0;background:#fff}.inv-card{border:0;break-inside:avoid}}
 @media(max-width:900px){.inv-form.four{grid-template-columns:repeat(2,minmax(0,1fr))}.inv-form.three{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:520px){.inv-form,.inv-form.three,.inv-form.four{grid-template-columns:1fr}.inv-addbar{grid-template-columns:1fr 1fr}.inv-gallery{grid-template-columns:1fr}.inv-search{max-width:none}.inv-tile .v{font-size:21px}.inv-dialog-body{padding:4px 12px 12px}}
+.sales-workspace-head{margin:0 0 16px}
+.sales-workspace-head h1{font-size:25px;letter-spacing:-.6px}
+.sales-workspace-head p{color:var(--muted);margin-top:6px;font-size:13px}
+.sales-workspace-tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px;margin:0 0 22px;padding:6px;border:1px solid var(--line);border-radius:14px;background:var(--surface)}
+.sales-workspace-tabs button{display:grid;gap:4px;text-align:left;padding:12px 15px;border:1px solid transparent;border-radius:10px;background:transparent;color:var(--muted);transition:background .16s,border-color .16s,color .16s}
+.sales-workspace-tabs button strong{font-size:13px;color:inherit}.sales-workspace-tabs button small{font-size:11px;color:var(--faint)}
+.sales-workspace-tabs button:hover{background:var(--raise);color:var(--text)}
+.sales-workspace-tabs button.active{background:var(--card);color:var(--text);border-color:var(--line);box-shadow:0 4px 14px #0002}
+.sales-workspace-tabs button.active strong{color:var(--accent-ink,#c4b5fd)}
+.sales-workspace>.inv-pg>.sales-workspace-head~.inv{padding:0}
+@media(max-width:620px){.sales-workspace-tabs{gap:4px;padding:4px}.sales-workspace-tabs button{padding:10px 8px}.sales-workspace-tabs button small{display:none}}

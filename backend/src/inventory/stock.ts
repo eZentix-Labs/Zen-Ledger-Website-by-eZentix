@@ -13,6 +13,7 @@ export type Move = {
   dOnM: number;               // signed change to on-hand (milli-units)
   dResM?: number;             // signed change to reserved (milli-units)
   unitCostPaise?: number | null; // incoming: cost of the units received; outgoing: override (default current average)
+  valuePaise?: number;        // explicit value for non-quantity ledger entries, such as production variance
   ref: {type: string; id: string; number?: string; line?: number};
   key: string;                // idempotency key, unique in the ledger
   reason?: string; notes?: string; location?: string;
@@ -41,7 +42,9 @@ export function nextAverage(prevOnM: number, prevAvg: number | null, dOnM: numbe
 export async function post(session: mongoose.ClientSession, actor: Actor, mv: Move) {
   const dOn = mv.dOnM, dRes = mv.dResM ?? 0;
   if (!Number.isInteger(dOn) || !Number.isInteger(dRes)) fail(400, 'Quantities must be in whole thousandths');
-  if (dOn === 0 && dRes === 0) fail(400, 'Movement has no quantity');
+  const valueOnlyProductionEntry = mv.kind === 'PRODUCT' && ['PRODUCTION_VARIANCE', 'PRODUCTION_COST_ADJUSTMENT'].includes(mv.type)
+    && Number.isSafeInteger(mv.valuePaise) && (mv.valuePaise as number) >= 0;
+  if (dOn === 0 && dRes === 0 && !valueOnlyProductionEntry) fail(400, 'Movement has no quantity');
   const isItem = mv.kind === 'ITEM';
   if (!isItem && (dOn % 1000 || dRes % 1000)) fail(400, 'Finished products move in whole pieces');
   const onF = isItem ? 'onHandM' : 'stock', resF = isItem ? 'reservedM' : 'reservedStock', scale = isItem ? 1 : 1000;
@@ -63,7 +66,11 @@ export async function post(session: mongoose.ClientSession, actor: Actor, mv: Mo
   if (isItem) prevAvg = prev.avgCostPaise ?? null;
   else { profile = await Inv.ProductProfile.findOne({productId: mv.itemId}).session(session).lean(); prevAvg = profile?.avgCostPaise ?? null; }
   const cost = mv.unitCostPaise !== undefined ? mv.unitCostPaise : (dOn < 0 ? prevAvg : null);
-  const newAvg = nextAverage(prevOn, prevAvg, dOn, cost);
+  let newAvg = nextAverage(prevOn, prevAvg, dOn, cost);
+  if (mv.type === 'PRODUCTION_COST_ADJUSTMENT' && (mv.valuePaise || 0) > 0) {
+    if (prevOn <= 0 || prevAvg == null) fail(409, 'Cannot allocate final production cost because accepted finished stock is no longer on hand');
+    newAvg = round4((prevAvg as number) + (mv.valuePaise as number) / (prevOn / 1000));
+  }
   if (newAvg !== prevAvg) {
     if (isItem) await Inv.Item.updateOne({_id: mv.itemId}, {$set: {avgCostPaise: newAvg}}, {session});
     else await Inv.ProductProfile.updateOne({productId: mv.itemId}, {$set: {avgCostPaise: newAvg}, $setOnInsert: {productId: mv.itemId}}, {session, upsert: true});
@@ -76,7 +83,7 @@ export async function post(session: mongoose.ClientSession, actor: Actor, mv: Mo
     unit: isItem ? prev.stockUnit : (prev.unit || 'pcs'),
     type: mv.type, qtyInM: Math.max(0, dOn), qtyOutM: Math.max(0, -dOn),
     prevM: prevOn, newM: prevOn + dOn, prevReservedM: prevRes, newReservedM: prevRes + dRes,
-    unitCostPaise: cost == null ? null : round4(cost), valuePaise: cost == null || dOn === 0 ? (dOn === 0 ? 0 : null) : Math.round(Math.abs(dOn) / 1000 * cost),
+    unitCostPaise: cost == null ? null : round4(cost), valuePaise: mv.valuePaise ?? (cost == null || dOn === 0 ? (dOn === 0 ? 0 : null) : Math.round(Math.abs(dOn) / 1000 * cost)),
     avgBeforePaise: prevAvg, avgAfterPaise: newAvg,
     refType: mv.ref.type, refId: mv.ref.id, refNumber: mv.ref.number, refLine: mv.ref.line,
     location: mv.location ?? (isItem ? prev.location : ''), reason: mv.reason, notes: mv.notes,

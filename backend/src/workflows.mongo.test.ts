@@ -220,6 +220,8 @@ describe('Finished goods, sales dispatch, salesmen and targets', () => {
     expect((await call('acc', 'POST', '/api/salesmen', {name: 'Other', phone: '9830011223', password: 'abcdefgh1'})).status).toBe(409);
     const stored: any = await Models.users.findOne({id: r.id}).lean();
     expect(stored.password).not.toContain(r.temporaryPassword);
+    expect(stored.phone).toBe('9830011223');
+    expect(bcrypt.compareSync(r.temporaryPassword, stored.password)).toBe(true);
     const login = ok(await call('', 'POST', '/api/auth/login', {phone: '9830011223', password: r.temporaryPassword}, false));
     expect(login.user.mustChangePassword).toBe(true);
     tokens.s2 = login.token;
@@ -299,5 +301,29 @@ describe('Finished goods, sales dispatch, salesmen and targets', () => {
     const csv = await fetch(`${url}/api/inventory/reports/stock-valuation?format=csv`, {headers: {Authorization: `Bearer ${tokens.owner}`}});
     expect(csv.headers.get('content-type')).toContain('text/csv');
     expect(await csv.text()).toContain('E.D.D Steel Sheet 22G');
+  });
+  it('settles short-close cost between accepted finished goods and explicit production variance', async () => {
+    const productId = 'p-cost-settlement-test';
+    await Models.products.create({id: productId, name: 'Settlement Test Almirah', sku: 'COST-SETTLEMENT-TEST', category: 'Steel Almirah', unit: 'piece', price: 0, stock: 0, reservedStock: 0, reorder: 1, status: 'active'});
+    const testSheet = ok(await call('owner', 'POST', '/api/inventory/items', {name: 'Settlement Test Sheet', code: 'RM-COST-TEST-SHEET', itemType: 'RAW_MATERIAL', stockUnit: 'sheet', openingQty: 100, openingCostRupees: 960})).id;
+    const testHinge = ok(await call('owner', 'POST', '/api/inventory/items', {name: 'Settlement Test Hinge', code: 'CMP-COST-TEST-HINGE', itemType: 'COMPONENT', stockUnit: 'pcs', openingQty: 200, openingCostRupees: 12.5})).id;
+    const bom = ok(await call('owner', 'POST', '/api/inventory/boms', {productId, lines: [{itemId: testSheet, qty: 2}, {itemId: testHinge, qty: 4}], labourRupees: 600, overheadRupees: 150}));
+    ok(await call('owner', 'POST', `/api/inventory/boms/${bom.id}/approve`, {}));
+    const po = ok(await call('owner', 'POST', '/api/inventory/productions', {productId, plannedQty: 10, submit: true}));
+    ok(await call('owner', 'POST', `/api/inventory/productions/${po.id}/approve`, {}));
+    ok(await call('owner', 'POST', `/api/inventory/productions/${po.id}/reserve`, {}));
+    ok(await call('owner', 'POST', `/api/inventory/productions/${po.id}/issue`, {lines: [{itemId: testSheet, qty: 20}, {itemId: testHinge, qty: 40}]}));
+    ok(await call('owner', 'POST', `/api/inventory/productions/${po.id}/start`, {}));
+    ok(await call('owner', 'POST', `/api/inventory/productions/${po.id}/output`, {producedQty: 5, acceptedQty: 5}));
+    ok(await call('owner', 'POST', `/api/inventory/productions/${po.id}/complete`, {closeShort: true, notes: 'Owner closed order at half output'}));
+    const done: any = await Inv.Production.findById(po.id).lean();
+    const rows: any[] = await Inv.Ledger.find({refType: 'PRODUCTION', refId: po.id, type: {$in: ['PRODUCTION_OUTPUT', 'PRODUCTION_VARIANCE']}}).lean();
+    const allocatedPaise = rows.filter(x => x.type === 'PRODUCTION_OUTPUT').reduce((a, x) => a + x.valuePaise, 0);
+    const variancePaise = rows.filter(x => x.type === 'PRODUCTION_VARIANCE').reduce((a, x) => a + x.valuePaise, 0);
+    expect(done.costAbsorbedPaise).toBe(1_360_000);
+    expect(allocatedPaise).toBe(1_360_000);
+    expect(variancePaise).toBe(1_360_000);
+    expect(allocatedPaise + variancePaise).toBe(2_720_000);
+    expect(rows.find(x => x.type === 'PRODUCTION_OUTPUT').unitCostPaise).toBe(272_000);
   });
 });

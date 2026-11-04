@@ -73,6 +73,13 @@ describe('Admin overview and order desk', () => {
     expect(o.topProducts[0]).toMatchObject({id: 'p1', valuePaise: 3_000_000, qty: 3});
     expect(o.categories.map((x: any) => x.name)).toEqual(['Double Door', 'Locker']);
     expect(o.operations).toMatchObject({pending: 0, inProgress: 1, dispatched: 1, lowStock: 1});
+    expect(o.generatedAt).toBeTruthy();
+    expect(o.stock).toMatchObject({finishedGoods: {low: 1}, stockValuePaise: 0, uncostedStockItems: 0});
+    expect(o.finance.ageing.map((x: any) => x.bucket)).toEqual(['0-30', '31-60', '60+']);
+    expect(o.production).toMatchObject({active: 0, late: 0});
+    expect(o.profit).toMatchObject({grossProfitPaise: null, estimated: true});
+    expect(o.quality.productsMissingBom).toBe(2);
+    expect(o.topDistributors[0]).toMatchObject({id: 'c1', salesPaise: 2_500_000});
     expect(o.management.topPerformer).toMatchObject({id: 'u-s1', salesPaise: 2_500_000});
     expect(o.recent).toHaveLength(3);
     expect(o.series.sales.reduce((x: number, y: number) => x + y, 0)).toBe(o.kpi.salesPaise);

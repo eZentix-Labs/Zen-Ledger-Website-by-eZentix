@@ -32,5 +32,16 @@ const activitySchema = new Schema({
 }, {versionKey: false});
 activitySchema.index({salesmanId: 1, at: -1});
 
+const returnSchema = new Schema({
+  orderId: {type: String, required: true, index: true},
+  lineNo: {type: Number, required: true}, productId: {type: String, required: true}, productName: String,
+  qty: {type: Number, required: true, min: 1},
+  unitPricePaise: {type: Number, required: true, min: 0}, returnValuePaise: {type: Number, required: true, min: 0},
+  unitCostPaise: {type: Number, required: true, min: 0}, costPaise: {type: Number, required: true, min: 0},
+  reason: {type: String, default: ''}, returnedBy: actor, returnedAt: {type: Date, default: Date.now},
+  idempotencyKey: {type: String, required: true, unique: true},
+}, opts);
+returnSchema.index({orderId: 1, lineNo: 1, returnedAt: 1});
+
 const m = (name: string, schema: mongoose.Schema) => (mongoose.models[name] as mongoose.Model<any>) || mongoose.model<any>(name, schema);
-export const Sales = {Target: m('SalesTarget', targetSchema), Activity: m('SalesActivity', activitySchema)};
+export const Sales = {Target: m('SalesTarget', targetSchema), Activity: m('SalesActivity', activitySchema), Return: m('SalesReturn', returnSchema)};

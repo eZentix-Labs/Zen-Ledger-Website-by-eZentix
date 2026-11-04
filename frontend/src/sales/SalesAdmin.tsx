@@ -10,6 +10,17 @@ const tLabel = (t: string) => TARGET_TYPES.find(x => x[0] === t)?.[1] || label(t
 const STATE_TONE: Record<string, any> = {COMPLETED: 'green', ACTIVE: 'violet', OVERDUE: 'red', UPCOMING: 'blue', CANCELLED: 'grey'};
 export const targetValue = (t: any, v: number) => t.progress?.money || ['SALES_AMOUNT', 'REVENUE', 'COLLECTION_AMOUNT'].includes(t.type) ? rupees(v) : String(v);
 
+export function SalesWorkspace() {
+  const [section, setSection] = useState<'team' | 'targets' | 'performance'>('team');
+  return <div className="inv sales-workspace"><div className="inv-pg">
+    <div className="sales-workspace-head"><div><div className="inv-eb">Sales management</div><h1>Sales team</h1><p>Manage your salesmen, set measurable goals and review results from one workspace.</p></div></div>
+    <div className="sales-workspace-tabs" role="tablist" aria-label="Sales management sections">
+      {([['team', 'Salesmen', 'Manage accounts and territories'], ['targets', 'Targets', 'Assign and track goals'], ['performance', 'Performance', 'Review sales and collections']] as const).map(([key, title, hint]) => <button key={key} role="tab" aria-selected={section === key} className={section === key ? 'active' : ''} onClick={() => setSection(key)}><strong>{title}</strong><small>{hint}</small></button>)}
+    </div>
+    {section === 'team' ? <SalesmenPage /> : section === 'targets' ? <TargetsPage /> : <PerformancePage />}
+  </div></div>;
+}
+
 type Range = 'today' | 'yesterday' | 'week' | 'month' | 'custom';
 function rangeOf(r: Range, c: {from: string; to: string}) {
   const t = todayIso();
@@ -28,7 +39,7 @@ export function TargetBar({t}: {t: any}) {
 }
 
 // ============================ Salesmen ============================
-export function SalesmenPage() {
+function SalesmenDirectory() {
   const perms = usePerms();
   const [q, setQ] = useState(''), [status, setStatus] = useState('ACTIVE'), [form, setForm] = useState<any | null | 'new'>(null), [open, setOpen] = useState<string | null>(null), [created, setCreated] = useState<any>(null);
   const list = useLoad(() => get<any>('/api/salesmen', {q, status}), [q, status]);
@@ -47,6 +58,17 @@ export function SalesmenPage() {
     {created && <Dialog title="Salesman account created" onClose={() => setCreated(null)} footer={<Button onClick={() => setCreated(null)}>Done</Button>}><p>Share these sign-in details privately. The temporary password is shown <b>only once</b>; the salesman must change it at first sign-in.</p><div className="inv-kv" style={{marginTop: 14}}><div><span>Login (phone)</span><b className="inv-mono" style={{fontSize: 16}}>{created.loginWith}</b></div><div><span>Temporary password</span><b className="inv-mono" style={{fontSize: 16}}>{created.temporaryPassword}</b></div></div><Button variant="ghost" small onClick={() => navigator.clipboard?.writeText(`Login: ${created.loginWith}\nPassword: ${created.temporaryPassword}`)}>Copy</Button></Dialog>}
     {open && <SalesmanProfile id={open} perms={perms.data || []} onClose={() => setOpen(null)} onChanged={() => void list.reload()} />}
   </div></div></ToastHost>;
+}
+
+export function SalesmenPage() {
+  const [section, setSection] = useState<'team' | 'targets' | 'performance'>('team');
+  return <div className="inv sales-workspace"><div className="inv-pg">
+    <div className="sales-workspace-head"><div><div className="inv-eb">Sales management</div><h1>Sales team</h1><p>Manage your salesmen, set measurable goals and review results from one workspace.</p></div></div>
+    <div className="sales-workspace-tabs" role="tablist" aria-label="Sales management sections">
+      {([['team', 'Salesmen', 'Manage accounts and territories'], ['targets', 'Targets', 'Assign and track goals'], ['performance', 'Performance', 'Review sales and collections']] as const).map(([key, title, hint]) => <button key={key} role="tab" aria-selected={section === key} className={section === key ? 'active' : ''} onClick={() => setSection(key)}><strong>{title}</strong><small>{hint}</small></button>)}
+    </div>
+    {section === 'team' ? <SalesmenDirectory /> : section === 'targets' ? <TargetsPage /> : <PerformancePage />}
+  </div></div>;
 }
 
 function SalesmanForm({salesman, onClose, onSaved}: {salesman?: any; onClose: () => void; onSaved: (r?: any) => void}) {

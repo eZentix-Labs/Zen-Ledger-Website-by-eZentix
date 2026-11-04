@@ -1,6 +1,7 @@
 import dotenv from 'dotenv';
 import path from 'node:path';
 import { z } from 'zod';
+import { assertSafeMongoUri } from './mongo-safety.js';
 
 // Tests must never pick up backend/.env (it holds the production URI).
 if (process.env.NODE_ENV !== 'test') dotenv.config();
@@ -19,6 +20,7 @@ const parsed=envSchema.safeParse(process.env);
 if(!parsed.success)throw new Error(`Invalid environment configuration: ${parsed.error.issues.map(i=>i.message).join('; ')}`);
 export const config={...parsed.data,dataFile:path.resolve(parsed.data.DATA_FILE)};
 if(config.PERSISTENCE==='mongo'&&!config.MONGODB_URI)throw new Error('MONGODB_URI is required when PERSISTENCE=mongo');
+if(config.NODE_ENV!=='production')assertSafeMongoUri(config.MONGODB_URI);
 if(config.NODE_ENV==='production'){
   if(config.PERSISTENCE!=='mongo')throw new Error('Production requires PERSISTENCE=mongo; the JSON repository is development-only');
   if(/replace-with|change-me|changeme|demo|development/i.test(config.JWT_SECRET))throw new Error('Production JWT_SECRET must be a unique secret and must not contain placeholder or demo text');

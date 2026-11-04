@@ -244,3 +244,55 @@
 @media (max-width:420px){.zl .zl-kpis{grid-template-columns:minmax(0,1fr) minmax(0,1fr);gap:8px}.zl .zl-kpi{padding:12px}}
 @media print{.zl .zl-side,.zl .zl-topbar,.zl .zl-no-print{display:none!important}.zl-layer{position:static;background:none}.zl .zl-drawer{width:100%;border:0}}
 .zl-sr{position:absolute!important;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+
+/* Owner overview: prioritise decisions, keep financial caveats visible, and reflow without clipping. */
+.zl-overview-meta{display:flex;justify-content:space-between;gap:12px;color:var(--muted);font-size:12px;margin:-8px 0 16px}
+.zl-overview-kpis{grid-template-columns:repeat(5,minmax(0,1fr));margin-bottom:18px}
+.zl-overview-kpis .zl-kpi{min-width:0;text-align:left}
+.zl-attention{border-color:color-mix(in srgb,var(--amber) 45%,var(--line));margin-bottom:18px}
+.zl-attention .zl-card-h h2,.zl-card-h h2{font:700 15px var(--head);margin:0}
+.zl-attention .zl-card-h p,.zl-card-h p{margin:5px 0 0;color:var(--muted);font-size:12px;line-height:1.5}
+.zl-attention-list{list-style:none;margin:0;padding:0}
+.zl-attention-list li{display:flex;align-items:center;gap:12px;min-height:64px;border-top:1px solid var(--line);padding:10px 2px}
+.zl-attention-loading-row{display:flex;align-items:center;gap:12px;min-height:64px;border-top:1px solid var(--line);padding:10px 2px}
+.zl-attention-icon{display:grid;place-items:center;width:34px;height:34px;border-radius:10px;flex:none;background:var(--surface-2,var(--bg))}
+.zl-attention-icon.red{color:var(--red)}.zl-attention-icon.amber{color:var(--amber)}.zl-attention-icon.blue{color:var(--accent2)}
+.zl-attention-copy{display:grid;gap:4px;flex:1;min-width:0}.zl-attention-copy b{font-size:12px}.zl-attention-copy small{color:var(--muted);font-size:11px;line-height:1.4}
+.zl-ageing-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+.zl-ageing{display:grid;gap:7px;text-align:left;padding:14px;border:1px solid var(--line);border-radius:12px;background:var(--surface-2,var(--bg));color:var(--text);cursor:pointer;font:inherit}
+.zl-ageing:hover{border-color:var(--accent2)}.zl-ageing span,.zl-ageing small{color:var(--muted);font-size:11px}.zl-ageing b{font:700 18px var(--head);font-variant-numeric:tabular-nums}
+.zl-overview-stats{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:0 14px;margin:0}
+.zl-overview-stats>div{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:13px 0;border-bottom:1px solid var(--line)}
+.zl-overview-skeleton-row{display:flex;justify-content:space-between;align-items:center;gap:10px;min-height:43px;border-bottom:1px solid var(--line)}
+.zl-overview-stats dt{color:var(--muted);font-size:12px}.zl-overview-stats dd{margin:0;font-size:13px;font-weight:700;text-align:right;font-variant-numeric:tabular-nums}
+.zl-profit-value{font:700 27px var(--head);margin:17px 0 8px;font-variant-numeric:tabular-nums}
+.zl-note{color:var(--muted);font-size:11px;line-height:1.5;margin:10px 0}
+.zl-warn{display:flex;align-items:flex-start;gap:8px;color:var(--amber);font-size:12px;line-height:1.45}.zl-warn svg{flex:none}
+.zl-overview-empty{padding:18px 0;color:var(--muted);font-size:13px}
+.zl-table-scroll{overflow-x:auto;overscroll-behavior-inline:contain}.zl-data-table{border-collapse:collapse;width:100%;min-width:280px;text-align:left;font-size:12px}
+.zl-data-table th,.zl-data-table td{padding:11px 8px;border-bottom:1px solid var(--line);vertical-align:top}.zl-data-table thead th{color:var(--muted);font-size:10px;text-transform:uppercase;letter-spacing:.04em}.zl-data-table tbody th{font-weight:600}.zl-data-table td{text-align:right;font-variant-numeric:tabular-nums}
+.zl-quality-list{list-style:none;padding:0;margin:0}.zl-quality-list li{display:flex;justify-content:space-between;gap:12px;padding:12px 0;border-bottom:1px solid var(--line);font-size:12px}.zl-quality-list li span{color:var(--muted)}
+.zl-overview-quick{display:flex;flex-wrap:wrap;gap:9px;margin:18px 0}.zl-overview-quick button{display:inline-flex;align-items:center;gap:8px;min-height:40px;padding:0 13px;border:1px solid var(--line);border-radius:10px;background:var(--card);color:var(--text);font:600 12px var(--body);cursor:pointer}.zl-overview-quick button:hover{border-color:var(--accent2)}
+.zl-overview button:focus-visible{outline:2px solid var(--accent2);outline-offset:3px}
+@media(max-width:1100px){.zl-overview-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:900px){.zl-overview .zl-ph{padding-left:52px}}
+@media(max-width:768px){.zl-overview-meta{font-size:11px}.zl-overview-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.zl-overview .zl-ph{align-items:flex-start}.zl-overview .zl-ph>.zl-actions{width:100%;flex-wrap:wrap}.zl-ageing-grid{grid-template-columns:1fr}.zl-overview-stats{grid-template-columns:1fr}.zl-overview .zl-g3,.zl-overview .zl-g2{grid-template-columns:minmax(0,1fr)}}
+.zl-overview{width:100%;min-width:0}
+.zl-overview .zl-card-h,.zl-overview .zl-card-h>div{min-width:0}
+.zl-overview .zl-overview-meta span{min-width:0}
+.zl-overview-stats dt,.zl-overview-stats dd{min-width:0;overflow-wrap:anywhere}
+@media(max-width:900px){.zl-overview .zl-ph{padding-left:0}}
+@media(max-width:768px){
+  .zl-overview .zl-ph{gap:12px;padding-bottom:14px}
+  .zl-overview .zl-ph>.zl-actions{align-items:stretch;gap:8px}
+  .zl-overview .zl-ph>.zl-actions>.zl-actions{flex:1 1 100%;min-width:0}
+  .zl-overview .zl-ph>.zl-actions>.zl-actions .zl-seg{flex:1;min-width:0}
+  .zl-overview .zl-ph>.zl-actions>.zl-actions .zl-seg button{flex:1;justify-content:center;padding-inline:7px}
+  .zl-overview .zl-ph>.zl-actions>.zl-btn{margin-left:auto}
+  .zl-overview-meta{flex-wrap:wrap;margin-top:0}
+  .zl-overview .zl-card-h{flex-wrap:wrap}
+  .zl-overview .zl-g3,.zl-overview .zl-g2{gap:12px}
+  .zl-ageing-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .zl-overview-quick button{flex:1 1 145px;justify-content:center}
+}
+@media(max-width:360px){.zl-overview-kpis{grid-template-columns:minmax(0,1fr)}.zl-ageing-grid{grid-template-columns:minmax(0,1fr)}.zl-overview .zl-card{padding:12px}}

@@ -9,6 +9,7 @@ import {fail, parse, route} from './http.js';
 import {mutate, nextNumber} from './txn.js';
 import {stockStatus} from './routes-items.js';
 import {progress} from './routes-production.js';
+import {settleProductionCost} from './production-cost.js';
 import {buildLines, totals} from './routes-purchases.js';
 
 const ACTIVE_PROD = ['APPROVED', 'MATERIALS_RESERVED', 'IN_PROGRESS', 'QUALITY_CHECK'];
@@ -132,9 +133,18 @@ export function registerReportRoutes(app: Express) {
       sumLedger(['PURCHASE_RECEIPT'], from, to), sumLedger(['MATERIAL_ISSUE'], from, to), sumLedger(['MATERIAL_RETURN'], from, to),
       Inv.Wastage.aggregate([{$match: {status: 'APPROVED', approvedAt: {$gte: from, $lte: to}}}, {$group: {_id: null, v: {$sum: {$ifNull: ['$costPaise', 0]}}, n: {$sum: 1}, unknown: {$sum: {$cond: [{$eq: ['$costPaise', null]}, 1, 0]}}}}]),
       Inv.Ledger.find().sort({_id: -1}).limit(10).lean(), Inv.GoodsReceipt.find().sort({createdAt: -1}).limit(5).lean(), Inv.Production.find().sort({updatedAt: -1}).limit(5).lean(),
-      Inv.Ledger.aggregate([{$match: {createdAt: {$gte: new Date(Date.now() - 183 * 86400000)}, type: {$in: ['PURCHASE_RECEIPT', 'MATERIAL_ISSUE', 'MATERIAL_RETURN', 'PRODUCTION_OUTPUT', 'WASTAGE']}}}, {$group: {_id: {m: {$dateToString: {format: '%Y-%m', date: '$createdAt', timezone: tz}}, t: '$type'}, v: {$sum: {$ifNull: ['$valuePaise', 0]}}, q: {$sum: {$add: ['$qtyInM', '$qtyOutM']}}}}]),
+      Inv.Ledger.aggregate([{$match: {createdAt: {$gte: new Date(Date.now() - 183 * 86400000)}, type: {$in: ['PURCHASE_RECEIPT', 'MATERIAL_ISSUE', 'MATERIAL_RETURN', 'PRODUCTION_OUTPUT', 'PRODUCTION_COST_ADJUSTMENT', 'PRODUCTION_VARIANCE', 'WASTAGE']}}}, {$group: {_id: {m: {$dateToString: {format: '%Y-%m', date: '$createdAt', timezone: tz}}, t: '$type'}, v: {$sum: {$ifNull: ['$valuePaise', 0]}}, q: {$sum: {$add: ['$qtyInM', '$qtyOutM']}}}}]),
     ]);
-    const prodOut: any[] = await Inv.Production.aggregate([{$unwind: '$outputs'}, {$match: {'outputs.postedAt': {$gte: from, $lte: to}}}, {$group: {_id: null, v: {$sum: '$outputs.valuePaise'}, units: {$sum: '$outputs.acceptedQty'}}}]);
+    const completedOrders: any[] = await Inv.Production.find({status: 'COMPLETED', completedAt: {$gte: from, $lte: to}}).lean();
+    const prodOut = completedOrders.reduce((sum, o) => {
+      const issuedValue = o.lines.reduce((a: number, l: any) => a + l.issuedValuePaise - l.returnedValuePaise, 0);
+      const totalCost = issuedValue + o.labourCostPaise + o.overheadCostPaise + o.otherCostPaise;
+      const settlement = settleProductionCost({totalCostPaise: totalCost, plannedQty: o.plannedQty, producedQty: o.completedQty + o.rejectedQty, acceptedQty: o.completedQty, closed: true});
+      sum.allocatedPaise += settlement.targetAllocatedPaise;
+      sum.variancePaise += settlement.variancePaise;
+      sum.units += o.completedQty;
+      return sum;
+    }, {allocatedPaise: 0, variancePaise: 0, units: 0});
     const months = [...new Set(monthly.map(m => m._id.m))].sort();
     const mv = (m: string, t: string) => monthly.find(x => x._id.m === m && x._id.t === t)?.v || 0;
     const low = v.items.filter(i => stockStatus(i) === 'LOW').length, out = v.items.filter(i => stockStatus(i) === 'OUT').length;
@@ -145,14 +155,14 @@ export function registerReportRoutes(app: Express) {
       costControl: canCost ? {
         purchaseCostPaise: purchase.valuePaise, purchaseReceipts: purchase.count,
         materialConsumptionPaise: issues.valuePaise - returns.valuePaise,
-        productionCostPaise: prodOut[0]?.v ?? 0, unitsProduced: prodOut[0]?.units ?? 0,
+        productionCostPaise: prodOut.allocatedPaise, productionVariancePaise: prodOut.variancePaise, unitsProduced: prodOut.units,
         wastageCostPaise: wastageAgg[0]?.v ?? 0, wastageRecords: wastageAgg[0]?.n ?? 0,
         stockValuePaise: v.raw.valuePaise + v.accessories.valuePaise + v.other.valuePaise + v.fg.valuePaise,
         incomplete: {uncostedMovements: purchase.uncostedMovements + issues.uncostedMovements + returns.uncostedMovements, uncostedWastage: wastageAgg[0]?.unknown ?? 0, uncostedStockItems: v.raw.uncosted + v.accessories.uncosted + v.other.uncosted + v.fg.uncosted},
       } : null,
       movementsToday: {total: todayMoves.reduce((a, x) => a + x.n, 0), byType: Object.fromEntries(todayMoves.map(x => [x._id, x.n]))},
       completeness: await completeness(),
-      trends: canCost ? months.map(m => ({month: m, purchasesPaise: mv(m, 'PURCHASE_RECEIPT'), consumptionPaise: mv(m, 'MATERIAL_ISSUE') - mv(m, 'MATERIAL_RETURN'), productionPaise: mv(m, 'PRODUCTION_OUTPUT'), wastagePaise: mv(m, 'WASTAGE')})) : [],
+      trends: canCost ? months.map(m => ({month: m, purchasesPaise: mv(m, 'PURCHASE_RECEIPT'), consumptionPaise: mv(m, 'MATERIAL_ISSUE') - mv(m, 'MATERIAL_RETURN'), productionPaise: mv(m, 'PRODUCTION_OUTPUT') + mv(m, 'PRODUCTION_COST_ADJUSTMENT'), productionVariancePaise: mv(m, 'PRODUCTION_VARIANCE'), wastagePaise: mv(m, 'WASTAGE')})) : [],
       recentMovements: recentMoves.map((x: any) => ({_id: x._id, txnNo: x.txnNo, at: x.createdAt, itemName: x.itemName, type: x.type, qtyInM: x.qtyInM, qtyOutM: x.qtyOutM, unit: x.unit, refNumber: x.refNumber})),
       recentPurchases: recentGrns.map((g: any) => ({_id: g._id, number: g.number, supplierName: g.supplierName, at: g.createdAt, valuePaise: canCost ? g.totalValuePaise : null, lines: g.lines.length})),
       recentProduction: recentProd.map((o: any) => ({_id: o._id, number: o.number, productName: o.productName, status: o.status, progress: progress(o)})),

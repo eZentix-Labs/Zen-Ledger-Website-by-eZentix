@@ -8,6 +8,7 @@ import {UNITS, qtyToM} from './units.js';
 import {fail, paging, parse, route, sendPage} from './http.js';
 import {Actor, mutate, nextNumber} from './txn.js';
 import {post} from './stock.js';
+import {settleProductionCost} from './production-cost.js';
 
 const text = (max = 200) => z.string().trim().max(max);
 export const DEFAULT_STAGES = ['Material Preparation', 'Cutting', 'Bending', 'Welding', 'Grinding', 'Painting / Powder Coating', 'Assembly', 'Fittings Installation', 'Quality Check', 'Packaging', 'Finished Goods'].map((name, i) => ({code: name.toUpperCase().replace(/[^A-Z]+/g, '_').replace(/_$/, ''), name, order: i + 1}));
@@ -298,13 +299,13 @@ export function registerProductionRoutes(app: Express) {
     if (rejected > 0 && !body.qcNotes) fail(400, 'Explain why units were rejected at quality inspection');
     const issuedValue = o.lines.reduce((a: number, l: any) => a + l.issuedValuePaise - l.returnedValuePaise, 0);
     const totalCost = issuedValue + o.labourCostPaise + o.overheadCostPaise + o.otherCostPaise;
-    const final = done + body.producedQty === o.plannedQty;
-    // Planned-share costing per produced unit; the final batch absorbs the remainder. Rejected units' cost is carried by good units.
-    const batchCost = final ? totalCost - o.costAbsorbedPaise : Math.round(totalCost * body.producedQty / o.plannedQty);
+    const settlement = settleProductionCost({totalCostPaise: totalCost, plannedQty: o.plannedQty, producedQty: done + body.producedQty, acceptedQty: o.completedQty + body.acceptedQty, previouslyAllocatedPaise: o.costAbsorbedPaise || 0, closed: done + body.producedQty === o.plannedQty});
+    const batchCost = settlement.additionalAllocatedPaise;
     const unitCost = body.acceptedQty ? Math.round(batchCost / body.acceptedQty * 10000) / 10000 : null;
     const batchNo = (o.outputs?.length || 0) + 1;
     if (body.acceptedQty > 0) await post(session, actor, {kind: 'PRODUCT', itemId: o.productId, type: 'PRODUCTION_OUTPUT', dOnM: body.acceptedQty * 1000, unitCostPaise: unitCost, ref: {type: 'PRODUCTION', id: String(o._id), number: o.number, line: batchNo}, key: `OUTPUT:${o._id}:${batchNo}`, reason: `Production batch ${batchNo} passed QC`, approvedBy: actor});
-    await Inv.Production.updateOne({_id: o._id, completedQty: o.completedQty, rejectedQty: o.rejectedQty}, {$inc: {completedQty: body.acceptedQty, rejectedQty: rejected, costAbsorbedPaise: body.acceptedQty ? batchCost : 0}, $push: {outputs: {batchNo, producedQty: body.producedQty, acceptedQty: body.acceptedQty, rejectedQty: rejected, qcNotes: body.qcNotes, unitCostPaise: unitCost, valuePaise: body.acceptedQty ? batchCost : 0, postedAt: new Date(), postedBy: actor}, history: {at: new Date(), by: actor.name, action: `OUTPUT batch ${batchNo}`, notes: `${body.acceptedQty} accepted, ${rejected} rejected`}}}, {session});
+    else if (batchCost > 0 && o.completedQty > 0) await post(session, actor, {kind: 'PRODUCT', itemId: o.productId, type: 'PRODUCTION_COST_ADJUSTMENT', dOnM: 0, unitCostPaise: null, valuePaise: batchCost, ref: {type: 'PRODUCTION', id: String(o._id), number: o.number, line: batchNo}, key: `OUTPUT_COST_ADJUSTMENT:${o._id}:${batchNo}`, reason: `Rejected final batch cost allocated to ${o.completedQty} previously accepted unit(s)`, approvedBy: actor});
+    await Inv.Production.updateOne({_id: o._id, completedQty: o.completedQty, rejectedQty: o.rejectedQty}, {$inc: {completedQty: body.acceptedQty, rejectedQty: rejected, costAbsorbedPaise: batchCost}, $push: {outputs: {batchNo, producedQty: body.producedQty, acceptedQty: body.acceptedQty, rejectedQty: rejected, qcNotes: body.qcNotes, unitCostPaise: unitCost, valuePaise: body.acceptedQty ? batchCost : 0, postedAt: new Date(), postedBy: actor}, history: {at: new Date(), by: actor.name, action: `OUTPUT batch ${batchNo}`, notes: `${body.acceptedQty} accepted, ${rejected} rejected`}}}, {session});
     return {status: o.status, batchNo, acceptedQty: body.acceptedQty};
   });
   // Completion: every issued unit must be accounted for (consumed / returned / approved wastage).
@@ -315,6 +316,10 @@ export function registerProductionRoutes(app: Express) {
     if (done < o.plannedQty && !body.closeShort) fail(409, `${o.plannedQty - done} unit(s) have not been output yet. Record the output or close the order short.`);
     if (done < o.plannedQty && !body.notes) fail(400, 'Give a reason for closing short');
     if (await Inv.Wastage.exists({productionOrderId: String(o._id), status: 'PENDING'}).session(session)) fail(409, 'Approve or reject the pending wastage records for this order first');
+    const issuedValue = o.lines.reduce((a: number, l: any) => a + l.issuedValuePaise - l.returnedValuePaise, 0);
+    const totalCost = issuedValue + o.labourCostPaise + o.overheadCostPaise + o.otherCostPaise;
+    const settlement = settleProductionCost({totalCostPaise: totalCost, plannedQty: o.plannedQty, producedQty: done, acceptedQty: o.completedQty, previouslyAllocatedPaise: o.costAbsorbedPaise || 0, closed: true});
+    if (settlement.variancePaise > 0) await post(session, actor, {kind: 'PRODUCT', itemId: o.productId, type: 'PRODUCTION_VARIANCE', dOnM: 0, unitCostPaise: null, valuePaise: settlement.variancePaise, ref: {type: 'PRODUCTION', id: String(o._id), number: o.number}, key: `VARIANCE:${o._id}`, reason: body.closeShort ? `Unabsorbed cost on short close: ${body.notes}` : 'No accepted finished units to absorb production cost', approvedBy: actor});
     const lines = o.lines.map((l: any) => ({...l}));
     for (const l of lines) {
       l.consumedM = l.issuedM - l.returnedM - l.wastedM;   // material leaves stock once (at issue); this only classifies it

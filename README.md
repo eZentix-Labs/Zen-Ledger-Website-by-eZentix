@@ -25,6 +25,8 @@ npm run dev
 
 Set `VITE_API_URL=http://localhost:4000` in `frontend/.env` for local API calls. The demo login is `owner@example.com` / `ChangeMe123!`.
 
+The backend's local `.env` should use a loopback MongoDB URI (for example, `mongodb://127.0.0.1:27017/zen_ledger_local`) or explicitly select the JSON development store. Development startup refuses a non-local `MONGODB_URI` unless `ALLOW_REMOTE_DB=true` is explicitly set. Tests reject an inherited non-local URI by default, then use only their disposable `mongodb-memory-server` replica set. `ALLOW_REMOTE_DB` does not affect production configuration. Never set it for testing or point development at production.
+
 The local demo login is `owner@example.com` / `ChangeMe123!`. Change it before any real use. The default persistence mode is MongoDB. The JSON fallback is for isolated development only and is never mixed with MongoDB writes.
 
 Development-only local accounts are provisioned when `NODE_ENV=development` and the JSON datastore loads: `accounts@example.com` / `AccountsTest123!` and `salesperson@example.com` / `SalesTest123!`. These accounts are never seeded in production. The salesperson workspace supports catalog search, cart, customer creation, idempotent order submission, and own-order tracking.

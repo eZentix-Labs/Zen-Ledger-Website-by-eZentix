@@ -23,20 +23,30 @@ import {bucketOf, buckets, context, keyOf, orderFacts, sum, type Bucket, type Fa
 export const OVERDUE_DAYS = 30;
 const isoDay = z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Use a YYYY-MM-DD date');
 
-export type Bill = Facts & {billDate: string; billed: boolean; cancelled: boolean; ageDays: number; overdue: boolean; invoiceNumber: string | null; qty: number};
+export type Bill = Facts & {returnedPaise: number; billDate: string; billed: boolean; cancelled: boolean; ageDays: number; overdue: boolean; invoiceNumber: string | null; qty: number};
 
 /** Every bill (counted or cancelled-after-approval order) with its facts. */
 export async function allBills(d: Data) {
   const ctx = await context(d);
-  const invoices: any[] = await Models.invoices.find().select('id number').lean();
+  const [invoices, returns]: [any[], any[]] = await Promise.all([
+    Models.invoices.find().select('id number').lean(),
+    Sales.Return.find({orderId: {$in: d.orders.map(o => o.id)}}).select('orderId returnValuePaise').lean(),
+  ]);
   const invNo = new Map(invoices.map(i => [i.id, i.number]));
+  const returnTotals = new Map<string, number>();
+  for (const r of returns) returnTotals.set(r.orderId, (returnTotals.get(r.orderId) || 0) + r.returnValuePaise);
   const now = today();
   const bills: Bill[] = [];
   for (const o of d.orders) {
     const billed = COUNTED[d.policy].includes(o.status);
     const cancelled = o.status === 'Cancelled' && !!o.approvedAt;
     if (!billed && !cancelled) continue;
-    const f = orderFacts(d, ctx, o);
+    const facts = orderFacts(d, ctx, o);
+    const returnedPaise = returnTotals.get(o.id) || 0;
+    const netTotalPaise = Math.max(0, facts.totalPaise - returnedPaise);
+    const duePaise = facts.counted ? Math.max(0, netTotalPaise - facts.paidPaise) : 0;
+    const payStatus: Facts['payStatus'] = !facts.counted ? 'NA' : duePaise === 0 ? 'PAID' : facts.paidPaise > 0 ? 'PARTIAL' : 'UNPAID';
+    const f = {...facts, returnedPaise, duePaise, payStatus};
     const billDate = billed ? ymd(countedDate(o, d.policy)) : ymd(o.approvedAt);
     const ageDays = daysIn(billDate, now) - 1;
     bills.push({...f, billDate, billed, cancelled, ageDays, overdue: billed && f.duePaise > 0 && ageDays > OVERDUE_DAYS, invoiceNumber: invNo.get(o.id) || null, qty: f.qty});
@@ -218,28 +228,32 @@ export function registerBillRoutes(app: Express) {
     const bill = found as Bill;
     const o = d.orders.find(x => x.id === bill.id);
     const ids = o.items.map((i: any) => i.productId);
-    const [products, profiles, timeline] = await Promise.all([
+    const [products, profiles, timeline, returns] = await Promise.all([
       Models.products.find({id: {$in: ids}}).select('id sku').lean() as Promise<any[]>,
       Inv.ProductProfile.find({productId: {$in: ids}}).select('productId design productCode hsnCode gstRateBps').lean() as Promise<any[]>,
       Sales.Activity.find({orderId: bill.id}).sort({at: 1}).lean() as Promise<any[]>,
+      Sales.Return.find({orderId: bill.id}).sort({returnedAt: 1}).lean() as Promise<any[]>,
     ]);
     const pm = new Map(products.map(p => [p.id, p])), prof = new Map(profiles.map(p => [p.productId, p]));
     // GST is included in the price: taxable = total × 100 / (100 + rate). Estimated, split CGST/SGST equally.
-    const lines = o.items.map((l: any) => {
+    const lines = o.items.map((l: any, i: number) => {
       const p = prof.get(l.productId), rateBps = p?.gstRateBps ?? null, totalPaise = paise(l.qty * l.price);
       const r = rateBps ?? GST_FALLBACK_BPS, taxablePaise = Math.round(totalPaise * 10000 / (10000 + r)), gstPaise = totalPaise - taxablePaise;
-      return {productId: l.productId, name: l.name, design: p?.design || p?.productCode || '', sku: pm.get(l.productId)?.sku || '', hsn: p?.hsnCode || '', qty: l.qty, unit: l.unit || '', ratePaise: paise(l.price), totalPaise, gstRateBps: r, gstRateKnown: rateBps != null, taxablePaise, cgstPaise: Math.floor(gstPaise / 2), sgstPaise: gstPaise - Math.floor(gstPaise / 2)};
+      const lineReturns = returns.filter(x => x.lineNo === i + 1);
+      const returnedQty = lineReturns.reduce((n, x) => n + x.qty, 0);
+      return {lineNo: i + 1, productId: l.productId, name: l.name, design: p?.design || p?.productCode || '', sku: pm.get(l.productId)?.sku || '', hsn: p?.hsnCode || '', qty: l.qty, returnedQty, returnableQty: Math.max(0, l.qty - returnedQty), returnValuePaise: lineReturns.reduce((n, x) => n + x.returnValuePaise, 0), returns: lineReturns.map(x => ({id: String(x._id), qty: x.qty, valuePaise: x.returnValuePaise, reason: x.reason || '', returnedAt: x.returnedAt, by: x.returnedBy?.name || ''})), unit: l.unit || '', ratePaise: paise(l.price), totalPaise, gstRateBps: r, gstRateKnown: rateBps != null, taxablePaise, cgstPaise: Math.floor(gstPaise / 2), sgstPaise: gstPaise - Math.floor(gstPaise / 2)};
     });
     const customer: any = d.customers.find((c: any) => c.id === bill.customerId) || null;
     const perms = await permissionsFor(me.role);
     res.json({
       ...bill, lines,
+      returns: returns.map(x => ({id: String(x._id), lineNo: x.lineNo, productId: x.productId, productName: x.productName, qty: x.qty, valuePaise: x.returnValuePaise, reason: x.reason || '', returnedAt: x.returnedAt, by: x.returnedBy?.name || ''})),
       tax: {taxablePaise: sum(lines.map((l: any) => l.taxablePaise)), cgstPaise: sum(lines.map((l: any) => l.cgstPaise)), sgstPaise: sum(lines.map((l: any) => l.sgstPaise)), estimated: true, missingRates: lines.filter((l: any) => !l.gstRateKnown).length},
       customer: customer && {id: customer.id, name: customer.name, phone: customer.phone || '', address: customer.address || '', balancePaise: paise(customer.balance || 0)},
       payments: d.payments.filter(p => p.orderId === bill.id).sort((a, b) => String(a.paymentDate).localeCompare(String(b.paymentDate))).map(p => ({id: String(p._id), amountPaise: paise(p.amount), method: p.method, status: p.status, paymentDate: p.paymentDate, reference: p.reference || '', recordedBy: ctx.users.get(p.recordedBy)?.name || ''})),
       timeline: timeline.map(a => ({at: a.at, type: a.type, by: a.actor?.name || null, description: a.description})),
       stamps: {createdAt: o.createdAt, approvedAt: o.approvedAt || null, dispatchedAt: o.dispatchedAt || null, deliveredAt: o.deliveredAt || null, reason: o.reason || null},
-      can: {recordPayment: bill.billed && bill.duePaise > 0 && perms.includes('payment.record'), cancel: me.role !== 'salesman' && ['Approved', 'Processing'].includes(o.status)},
+      can: {recordPayment: bill.billed && bill.duePaise > 0 && perms.includes('payment.record'), cancel: me.role !== 'salesman' && ['Approved', 'Processing'].includes(o.status), return: perms.includes('sales.return') && (o.status === 'Delivered' || Boolean(bill.invoiceNumber))},
     });
   }));
 }

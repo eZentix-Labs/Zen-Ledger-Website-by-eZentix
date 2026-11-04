@@ -61,7 +61,7 @@ export function BillDrawer({id, onClose, onChanged}: {id: string; onClose: () =>
         <section className="zl-sec"><h4>{t('Items')}</h4>
           <div className="zl-table-wrap"><table className="zl-table bl-lines"><caption className="zl-sr">{t('Bill items')}</caption>
             <thead><tr><th>{t('Design')}</th><th>{t('Item')}</th><th className="r">{t('Qty')}</th><th className="r">{t('Rate')}</th><th className="r">GST</th><th className="r">{t('Amount')}</th></tr></thead>
-            <tbody>{b.lines.map(l => <tr key={l.productId}><td className="mono">{l.design || l.sku || '—'}</td><td>{l.name}</td><td className="r num">{l.qty}</td><td className="r num">{inr(l.ratePaise)}</td><td className="r num">{l.gstRateBps / 100}%{!l.gstRateKnown && <span className="amber" title={t('No GST rate recorded for this design; 18% assumed')}> *</span>}</td><td className="r num">{inr(l.totalPaise)}</td></tr>)}</tbody>
+            <tbody>{b.lines.map(l => <tr key={l.lineNo}><td className="mono">{l.design || l.sku || '—'}</td><td>{l.name}{l.returnedQty > 0 && <small className="bl-muted">{t('Returned')}: {l.returnedQty} · {inr(l.returnValuePaise)}</small>}</td><td className="r num">{l.qty}</td><td className="r num">{inr(l.ratePaise)}</td><td className="r num">{l.gstRateBps / 100}%{!l.gstRateKnown && <span className="amber" title={t('No GST rate recorded for this design; 18% assumed')}> *</span>}</td><td className="r num">{inr(l.totalPaise)}</td></tr>)}</tbody>
           </table></div>
         </section>
 
@@ -70,10 +70,15 @@ export function BillDrawer({id, onClose, onChanged}: {id: string; onClose: () =>
             <span>{t('Taxable value')} <small>({t('estimated')})</small></span><b>{inr(b.tax.taxablePaise)}</b>
             <span>CGST</span><b>{inr(b.tax.cgstPaise)}</b><span>SGST</span><b>{inr(b.tax.sgstPaise)}</b>
             <span className="grand">{t('Grand total')}</span><b className="grand">{inr(b.totalPaise)}</b>
+            <span>{t('Returns / credit')}</span><b>{inr(b.returnedPaise)}</b>
             <span>{t('Paid')}</span><b className="green">{inr(b.paidPaise)}</b>
             <span>{t('Balance due')}</span><b className={b.duePaise > 0 ? 'red' : ''}>{inr(b.duePaise)}</b>
           </div>
           <p className="zl-note">{t('Prices include GST. The split is estimated from each design\'s GST rate, assuming CGST + SGST.')}{b.tax.missingRates > 0 && <> <span className="amber">{b.tax.missingRates} {t('design(s) have no GST rate; 18% assumed (*).')}</span></>} {t('Discounts and round-off are not recorded on bills yet.')}</p>
+        </section>
+
+        <section className="zl-sec"><h4>{t('Returns')}</h4>
+          {b.returns.length ? <ul className="bl-pays">{b.returns.map(r => <li key={r.id}><span><b>{r.productName}</b> · {r.qty} {t('returned')} · {inr(r.valuePaise)}</span><small>{dateTime(r.returnedAt)}{r.by && ` · ${r.by}`}{r.reason && ` · ${r.reason}`}</small></li>)}</ul> : <p className="bl-muted">{t('No returns recorded yet.')}</p>}
         </section>
 
         <section className="zl-sec"><h4>{t('Payments')}</h4>

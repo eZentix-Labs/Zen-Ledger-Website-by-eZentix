@@ -21,14 +21,16 @@ export type OrderList = {
   salesmen: Array<{id: string; name: string; role: string}>; delayRule: {pendingHours: number; activeHours: number};
 };
 export type OrderDetail = Omit<OrderRow, 'lines'> & {
-  lines: Array<{productId: string; name: string; qty: number; price: number; unit?: string; sku: string; category: string; lineTotalPaise: number}>;
+  returnedPaise: number;
+  returns: Array<{id: string; lineNo: number; productId: string; productName: string; qty: number; valuePaise: number; reason: string; returnedAt: string; by: string}>;
+  lines: Array<{productId: string; lineNo: number; name: string; qty: number; returnedQty: number; returnableQty: number; returnValuePaise: number; returns: Array<{id: string; qty: number; valuePaise: number; reason: string; returnedAt: string}>; price: number; unit?: string; sku: string; category: string; lineTotalPaise: number}>;
   customer: {id: string; name: string; phone: string; address: string; balance: number} | null;
   payments: Array<{id: string; amountPaise: number; method: string; status: string; paymentDate: string; reference: string; recordedBy: string | null; createdAt: string}>;
   timeline: Array<{at: string; type: string; by: string | null; description: string}>;
   stamps: {createdAt: string; approvedAt: string | null; dispatchedAt: string | null; deliveredAt: string | null; closedAt: string | null; reason: string | null; statusBy: string | null};
   invoice: {id: string; number: string; total: number; paid: number; status: string; createdAt: string} | null;
   next: OrderStatus[];
-  can: {changeStatus: boolean; recordPayment: boolean; invoice: boolean; duplicate: boolean};
+  can: {changeStatus: boolean; recordPayment: boolean; invoice: boolean; duplicate: boolean; return: boolean};
 };
 
 export type OrderFilters = {from: string; to: string; q: string; status: string; pay: string; method: string; salesman: string; min: string; max: string; delayed: boolean};
@@ -53,4 +55,6 @@ export const ordersApi = {
   createInvoice: (id: string) => send<{number: string}>('POST', `/api/invoices/from-order/${id}`),
   recordPayment: (orderId: string, amountRupees: number, method: string, reference: string, paymentDate: string) =>
     send('POST', '/api/sales/payments', {orderId, amount: amountRupees, method, reference, paymentDate}),
+  returnLine: (orderId: string, lineNo: number, qty: number, reason: string, key: string) =>
+    send('POST', `/api/sales/orders/${orderId}/returns`, {lineNo, qty, reason}, key),
 };
