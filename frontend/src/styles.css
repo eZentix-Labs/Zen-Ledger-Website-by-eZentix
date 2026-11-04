@@ -95,3 +95,9 @@ aside.side .side-nav::-webkit-scrollbar{width:0;height:0;display:none}
 aside.side .collapse{right:12px;top:21px;width:30px;height:30px;border-radius:9px;color:var(--muted);background:var(--raise);border:1px solid var(--line);box-shadow:0 4px 12px #0003}
 aside.side .collapse:hover{color:var(--text);background:color-mix(in srgb,var(--violet) 18%,var(--raise));border-color:#8b5cf666}
 .collapsed aside.side .collapse{right:7px}
+/* Language toggle under the brand */
+aside.side .lang-toggle{display:grid;grid-template-columns:1fr 1fr;gap:2px;margin:0 4px 14px;padding:3px;border:1px solid var(--line);border-radius:10px;background:var(--card2)}
+aside.side .lang-toggle button{height:28px;padding:0;border:0;border-radius:7px;background:transparent;color:var(--muted);font-size:12.5px;font-weight:600;cursor:pointer}
+aside.side .lang-toggle button:hover{color:var(--text)}
+aside.side .lang-toggle button[aria-pressed=true]{background:var(--raise);color:var(--text)}
+aside.side .lang-toggle-compact{display:block;width:34px;height:30px;margin:0 auto 14px;padding:0;border:1px solid var(--line);border-radius:9px;background:var(--card2);color:var(--text);font-size:12px;font-weight:600;cursor:pointer}

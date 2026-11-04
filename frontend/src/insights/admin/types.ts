@@ -1,6 +1,6 @@
 // Shape of GET /api/admin/insights (backend/src/overview/insights.ts). All money is integer paise.
 // `null` means "not recorded / not visible", never zero.
-export type Page = 'Overview' | 'Inventory' | 'Products' | 'Orders' | 'Bills' | 'Invoices' | 'Customers' | 'Salesmen' | 'Targets' | 'Performance' | 'Settings';
+export type Page = 'Overview' | 'Inventory' | 'Products' | 'Orders' | 'Bills' | 'Invoices' | 'Customers' | 'Distributors' | 'Salesmen' | 'Targets' | 'Performance' | 'Settings';
 export type Kpi = {billedPaise: number; netSalesPaise: number; gstPaise: number; grossProfitPaise: number | null; collectedPaise: number; bills: number; avgBillPaise: number; activeDealers: number};
 export type Design = {id: string; sku: string; name: string; category: string; pieces: number; salesPaise: number; netPaise: number; costPaise: number | null; profitPaise: number | null; marginPct: number | null; profitPerPiecePaise: number | null};
 export type Salesperson = {id: string; name: string; role: string | null; active: boolean; billedPaise: number; collectedPaise: number; bills: number; delta: number | null; targetPaise: number | null; achievedPaise: number | null; targetPct: number | null};

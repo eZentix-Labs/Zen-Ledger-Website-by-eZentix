@@ -20,38 +20,37 @@ export function StockItems({group, title}: {group: 'materials' | 'accessories'; 
   const [q, setQ] = useState(''), [page, setPage] = useState(1), [f, setF] = useState({categoryId: '', itemType: '', stockStatus: '', supplierId: '', status: 'ACTIVE', location: ''});
   const cats = useCategories(), sups = useSupplierOptions();
   const list = useLoad(() => get<any>('/api/inventory/items', {group, q, page, limit: 25, ...f}), [group, q, page, JSON.stringify(f)]);
-  const [edit, setEdit] = useState<any | null | 'new'>(null), [view, setView] = useState<string | null>(null), [cats2, setCats2] = useState(false);
+  const [edit, setEdit] = useState<any | null | 'new'>(null), [view, setView] = useState<string | null>(null), [cats2, setCats2] = useState(false), [more, setMore] = useState(false);
+  const extraFilters = [f.itemType, f.supplierId, f.status !== 'ACTIVE' && f.status].filter(Boolean).length;
   const set = (k: keyof typeof f) => (e: React.ChangeEvent<HTMLSelectElement>) => { setF({...f, [k]: e.target.value}); setPage(1); };
   const typeOpts = (group === 'accessories' ? ['COMPONENT'] : ['RAW_MATERIAL', 'CONSUMABLE', 'PACKAGING', 'SPARE_PART', 'SEMI_FINISHED', 'OTHER']).map(t => [t, TYPE_LABEL[t]] as [string, string]);
   const catOpts = (cats.data || []).filter(c => group === 'accessories' ? c.itemType === 'COMPONENT' : c.itemType !== 'COMPONENT').map(c => [c._id, c.name] as [string, string]);
   const catName = (id: string) => cats.data?.find(c => c._id === id)?.name || '';
   const supName = (id: string) => sups.data?.find((s: any) => s._id === id)?.name || '';
+  const showValue = list.data?.items?.[0]?.valuePaise !== undefined;   // hidden from roles without valuation access
   return <Card title={title} aside={<>{can('item.manage') && <Button variant="ghost" small onClick={() => setCats2(true)}>Categories</Button>}{can('item.manage') && <Button onClick={() => setEdit('new')}>+ Add {group === 'accessories' ? 'accessory' : 'material'}</Button>}</>}>
     <div className="inv-filters">
       <Search value={q} onChange={v => { setQ(v); setPage(1); }} placeholder="Search name, code, SKU or barcode" />
-      {group === 'materials' && <Select value={f.itemType} onChange={set('itemType')} options={typeOpts} placeholder="All types" />}
       <Select value={f.categoryId} onChange={set('categoryId')} options={catOpts} placeholder="All categories" />
       <Select value={f.stockStatus} onChange={set('stockStatus')} options={[['LOW', 'Low stock'], ['OUT', 'Out of stock'], ['OK', 'In stock']]} placeholder="Any stock status" />
-      <Select value={f.supplierId} onChange={set('supplierId')} options={(sups.data || []).map((s: any) => [s._id, s.name])} placeholder="Any supplier" />
-      <Select value={f.status} onChange={set('status')} options={[['ACTIVE', 'Active'], ['INACTIVE', 'Inactive'], ['all', 'Active + inactive']]} />
+      <Button variant="ghost" aria-expanded={more} onClick={() => setMore(v => !v)}>{more ? 'Fewer filters' : 'More filters'}{extraFilters ? ` (${extraFilters})` : ''}</Button>
+      {more && <div className="inv-filters-more">
+        {group === 'materials' && <Select value={f.itemType} onChange={set('itemType')} options={typeOpts} placeholder="All types" />}
+        <Select value={f.supplierId} onChange={set('supplierId')} options={(sups.data || []).map((s: any) => [s._id, s.name])} placeholder="Any supplier" />
+        <Select value={f.status} onChange={set('status')} options={[['ACTIVE', 'Active'], ['INACTIVE', 'Inactive'], ['all', 'Active + inactive']]} />
+      </div>}
     </div>
     <ErrorBox error={list.error} retry={list.reload} />
     {!list.data ? <Loading /> : <>
-      <Table headers={['', 'Item', 'Category', 'Specifications', <span className="num">Available</span>, <span className="num">Avg cost</span>, <span className="num">Value</span>, <span className="num">Reorder at</span>, 'Supplier', 'Location', 'Status', 'Last movement', '']} empty={<>No {group === 'accessories' ? 'accessories' : 'materials'} yet.{can('item.manage') && <> <Button variant="subtle" onClick={() => setEdit('new')}>Add the first one</Button></>}</>}>
-        {list.data.items.map((i: any) => <tr key={i._id}>
-          <td><Thumb url={i.images?.[0]?.url} alt={i.name} /></td>
-          <td><div className="inv-name"><div><strong>{i.name}</strong><small className="inv-mono">{i.code}{i.sku ? ` · ${i.sku}` : ''}</small></div></div></td>
-          <td>{catName(i.categoryId) || <small>—</small>}<small>{TYPE_LABEL[i.itemType]}</small></td>
-          <td><small>{specText(i) || '—'}</small></td>
-          <td className="num"><strong>{qty(i.availableM)}</strong> {i.stockUnit}{i.reservedM ? <small>{qty(i.reservedM)} reserved</small> : null}</td>
-          <td className="num">{i.avgCostPaise === undefined ? '' : i.avgCostPaise == null ? <Chip tone="amber">No cost</Chip> : rupees(i.avgCostPaise)}</td>
-          <td className="num">{i.valuePaise === undefined ? '' : rupees(i.valuePaise)}</td>
-          <td className="num">{i.reorderLevelM == null ? <small>Not set</small> : qty(i.reorderLevelM, i.stockUnit)}</td>
-          <td>{supName(i.preferredSupplierId) || <small>—</small>}</td>
-          <td>{i.location || <small>—</small>}</td>
+      <Table headers={['Item', 'Category', <span className="num">Available</span>, ...(showValue ? [<span className="num">Value</span>] : []), 'Supplier', 'Status', '']} empty={<>No {group === 'accessories' ? 'accessories' : 'materials'} yet.{can('item.manage') && <> <Button variant="subtle" onClick={() => setEdit('new')}>Add the first one</Button></>}</>}>
+        {list.data.items.map((i: any) => <tr key={i._id} className="inv-click" onClick={() => setView(i._id)}>
+          <td><div className="inv-name">{i.images?.[0]?.url && <Thumb url={i.images[0].url} alt={i.name} size={34} />}<div><strong>{i.name}</strong><small><span className="inv-mono">{i.code}</span>{specText(i) ? ` · ${specText(i)}` : ''}</small></div></div></td>
+          <td>{catName(i.categoryId) || <small>—</small>}{group === 'materials' && <small>{TYPE_LABEL[i.itemType]}</small>}</td>
+          <td className="num"><strong>{qty(i.availableM)}</strong> {i.stockUnit}<small>{[i.reorderLevelM != null && `reorder at ${qty(i.reorderLevelM)}`, i.reservedM ? `${qty(i.reservedM)} reserved` : ''].filter(Boolean).join(' · ') || 'no reorder level'}</small></td>
+          {showValue && <td className="num">{i.avgCostPaise == null ? <Chip tone="amber">No cost</Chip> : <>{rupees(i.valuePaise)}<small>{rupees(i.avgCostPaise)} each</small></>}</td>}
+          <td className="inv-clip" title={supName(i.preferredSupplierId)}>{supName(i.preferredSupplierId) || <small>—</small>}{i.location && <small>{i.location}</small>}</td>
           <td>{i.status === 'INACTIVE' ? <Chip>Inactive</Chip> : statusChip(i.stockStatus)}</td>
-          <td>{i.lastMovement ? <small>{label(i.lastMovement.type)}<br />{dateTime(i.lastMovement.at)}</small> : <small>None</small>}</td>
-          <td><div className="inv-actions"><Button small variant="ghost" onClick={() => setView(i._id)}>View</Button>{can('item.manage') && <Button small variant="ghost" onClick={() => setEdit(i)}>Edit</Button>}</div></td>
+          <td><Button small variant="ghost" onClick={() => setView(i._id)}>View</Button></td>
         </tr>)}
       </Table>
       <Pager page={page} total={list.data.total} limit={25} onPage={setPage} />

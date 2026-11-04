@@ -1,11 +1,11 @@
 // Cards of the admin Insights page. Every number comes from GET /api/admin/insights; nothing is computed here
 // except presentation (labels, shares of a total already returned, chart scaling).
 import React, {useMemo, useState} from 'react';
-import {AlertTriangle, ArrowRight, CheckCircle2, Circle} from 'lucide-react';
-import {Donut, OTHER, SERIES, StackBar} from '../../admin/charts';
-import {Chip, Delta, KpiCard, METHOD_LABEL, Segmented, count, hourLabel, inr, pct} from '../../admin/ui';
+import {AlertTriangle, ArrowRight, CheckCircle2, Circle, ClipboardCheck, IndianRupee, Lock, Receipt, TrendingUp, Wallet} from 'lucide-react';
+import {BarChart, Donut, Gauge, OTHER, SERIES, StackBar, TrendChart} from '../../admin/charts';
+import {Chip, Delta, METHOD_LABEL, Segmented, StatCard, count, hourLabel, inr, pct} from '../../admin/ui';
 import {useI} from '../useI';
-import {ComboChart, Quadrant, Zone, zoneOf} from './charts';
+import {Columns, ComboChart, Quadrant, RankBars, Zone, zoneOf} from './charts';
 import type {AdminInsights, Page} from './types';
 
 type P = {d: AdminInsights; go: (p: Page) => void};
@@ -20,119 +20,162 @@ export function Compact({children, action}: {children: React.ReactNode; action?:
 function Card({title, hint, aside, children, className = ''}: {title: React.ReactNode; hint?: React.ReactNode; aside?: React.ReactNode; children: React.ReactNode; className?: string}) {
   return <section className={`zl-card ins-card ${className}`}><div className="zl-card-h"><div><h3>{title}</h3>{hint && <p>{hint}</p>}</div>{aside}</div>{children}</section>;
 }
+/** One question the page answers: a heading, then its graphs. */
+export function Section({title, hint, action, children}: {title: string; hint?: string; action?: React.ReactNode; children: React.ReactNode}) {
+  return <section className="ins-sec" aria-label={title}><div className="ins-sec-h"><div><h2>{title}</h2>{hint && <p>{hint}</p>}</div>{action}</div>{children}</section>;
+}
 export const bucketLabel = (key: string, bucket: AdminInsights['bucket']) => bucket === 'hour' ? hourLabel(Number(key))
   : bucket === 'day' ? new Date(key + 'T00:00:00').toLocaleDateString('en-IN', {day: 'numeric', month: 'short'})
   : new Date(key + '-01T00:00:00').toLocaleDateString('en-IN', {month: 'short', year: '2-digit'});
+function useUnit(d: AdminInsights) { const {t} = useI(); return d.bucket === 'hour' ? t('hour') : d.bucket === 'day' ? t('day') : t('month'); }
 
 // ---------------- summary ----------------
 export function Summary({d, periodName}: {d: AdminInsights; periodName: string}) {
   const {t, f} = useI(); const k = d.kpi, b = (x: React.ReactNode) => <b>{x}</b>;
-  if (!k.bills) return <div className="zl-summary ins-summary" role="status"><span className="k">{t('Summary')}</span>{f('{period} there are no bills yet.', {period: periodName})} {d.money.duePaise > 0 && f('{due} is still due from earlier bills.', {due: b(money(d.money.duePaise))})}</div>;
   const dl = d.deltas.billedPaise;
-  return <div className="zl-summary ins-summary" role="status"><span className="k">{t('Summary')}</span>
-    {f(k.bills === 1 ? '{period} you billed {billed} on 1 bill' : '{period} you billed {billed} across {n} bills',{period: periodName, billed: b(money(k.billedPaise)), n: b(count(k.bills))})}{dl != null && <> (<Delta value={dl} suffix={t('vs previous period')} />)</>}.{' '}
-    {f('{collected} of that is collected and {due} is still due.', {collected: b(money(d.rupee.collectedOnBillsPaise)), due: b(money(d.rupee.stillDuePaise))})}{' '}
-    {d.topDueDealer && <>{f('Biggest due overall: {name} ({amount}).', {name: b(d.topDueDealer.name), amount: money(d.topDueDealer.duePaise)})} </>}
-    {d.team.best && <>{f('Best salesperson: {name}.', {name: b(d.team.best.name)})} </>}
-    {d.canSeeCost && d.completeness.designsNoCost > 0 && <span className="warn"><AlertTriangle size={15} aria-hidden="true" style={{verticalAlign: -2}} /> {f(d.completeness.designsNoCost === 1 ? '1 design sold has no cost price, so profit is not complete.' : '{n} designs sold have no cost price, so profit is not complete.',{n: b(d.completeness.designsNoCost)})}</span>}
-  </div>;
+  return <Card title={t('Summary')} className="ins-story"><p role="status">
+    {!k.bills ? <>{f('{period} there are no bills yet.', {period: periodName})} {d.money.duePaise > 0 && f('{due} is still due from earlier bills.', {due: b(money(d.money.duePaise))})}</> : <>
+      {f(k.bills === 1 ? '{period} you billed {billed} on 1 bill' : '{period} you billed {billed} across {n} bills', {period: periodName, billed: b(short(k.billedPaise)), n: b(count(k.bills))})}{dl != null && <> (<Delta value={dl} suffix={t('vs previous period')} />)</>}.{' '}
+      {f('{collected} of that is collected and {due} is still due.', {collected: b(short(d.rupee.collectedOnBillsPaise)), due: b(short(d.rupee.stillDuePaise))})}{' '}
+      {d.topDueDealer && <>{f('Biggest due overall: {name} ({amount}).', {name: b(d.topDueDealer.name), amount: short(d.topDueDealer.duePaise)})} </>}
+      {d.team.best && <>{f('Best salesperson: {name}.', {name: b(d.team.best.name)})} </>}
+    </>}
+  </p>
+  {d.canSeeCost && d.completeness.designsNoCost > 0 && <p className="ins-warn"><AlertTriangle size={15} aria-hidden="true" /> <span>{f(d.completeness.designsNoCost === 1 ? '1 design sold has no cost price, so profit is not complete.' : '{n} designs sold have no cost price, so profit is not complete.', {n: b(d.completeness.designsNoCost)})}</span></p>}
+  </Card>;
 }
 
-// ---------------- KPI strip ----------------
+// ---------------- headline figures ----------------
 export function Kpis({d, go}: P) {
   const {t, s} = useI(); const k = d.kpi, dl = d.deltas, sr = d.series;
-  return <div className="zl-kpis ins-kpis">
-    <KpiCard label={t('Net sales (excl. GST)')} value={money(k.netSalesPaise)} delta={dl.netSalesPaise} spark={sr.net} hint={t('estimated')} onClick={() => go('Bills')} />
-    {d.canSeeCost && <KpiCard label={t('Gross profit')} value={k.grossProfitPaise == null ? <NotRecorded /> : money(k.grossProfitPaise)} delta={dl.grossProfitPaise} spark={k.grossProfitPaise == null ? undefined : sr.profit || undefined} color="var(--green)" hint={s('cost known for {pct} of sales', {pct: pct(d.completeness.costPct, 0)})} onClick={() => go('Products')} />}
-    <KpiCard label={t('Collected')} value={money(k.collectedPaise)} delta={dl.collectedPaise} spark={sr.collected} color="var(--cyan)" onClick={() => go('Bills')} />
-    <KpiCard label={t('Due now')} value={money(k.duePaise)} hint={s('{n} unpaid bills, all periods', {n: k.dueBills})} onClick={() => go('Bills')} />
-    <KpiCard label={t('Bills')} value={count(k.bills)} delta={dl.bills} spark={sr.bills} onClick={() => go('Bills')} />
-    <KpiCard label={t('Average bill')} value={money(k.avgBillPaise)} delta={dl.avgBillPaise} onClick={() => go('Bills')} />
-    <KpiCard label={t('Active dealers')} value={count(k.activeDealers)} delta={dl.activeDealers} spark={sr.dealers} onClick={() => go('Customers')} />
-  </div>;
+  return <section className="zl-stats" aria-label={t('Key figures')}>
+    <StatCard label={t('Net sales (excl. GST)')} value={short(k.netSalesPaise)} exact={money(k.netSalesPaise)} delta={dl.netSalesPaise} spark={sr.net} icon={<IndianRupee size={16} />} hint={t('estimated')} onClick={() => go('Bills')} />
+    {d.canSeeCost
+      ? <StatCard label={t('Gross profit')} value={k.grossProfitPaise == null ? '—' : short(k.grossProfitPaise)} exact={k.grossProfitPaise == null ? undefined : money(k.grossProfitPaise)} delta={dl.grossProfitPaise} spark={k.grossProfitPaise == null ? undefined : sr.profit || undefined} tone={(k.grossProfitPaise ?? 0) < 0 ? 'red' : 'violet'} icon={<TrendingUp size={16} />} hint={k.grossProfitPaise == null ? t('not recorded') : s('cost known for {pct} of sales', {pct: pct(d.completeness.costPct, 0)})} onClick={() => go('Products')} />
+      : <StatCard label={t('Average bill')} value={short(k.avgBillPaise)} exact={money(k.avgBillPaise)} delta={dl.avgBillPaise} icon={<Receipt size={16} />} onClick={() => go('Bills')} />}
+    <StatCard label={t('Collected')} value={short(k.collectedPaise)} exact={money(k.collectedPaise)} delta={dl.collectedPaise} spark={sr.collected} icon={<ClipboardCheck size={16} />} onClick={() => go('Bills')} />
+    <StatCard label={t('Due now')} value={short(k.duePaise)} exact={money(k.duePaise)} tone={k.duePaise ? 'amber' : 'violet'} icon={<Wallet size={16} />} hint={s('{n} unpaid bills, all periods', {n: k.dueBills})} onClick={() => go('Bills')} />
+    <StatCard label={t('Bills')} value={count(k.bills)} delta={dl.bills} spark={sr.bills} icon={<Receipt size={16} />} hint={d.canSeeCost ? `${t('Average bill')} ${short(k.avgBillPaise)}` : undefined} onClick={() => go('Bills')} />
+  </section>;
 }
 export function Footnote({d}: {d: AdminInsights}) {
   const {s} = useI(); const c = d.rupee.cancelled, p = d.rupee.pending;
   if (!c.count && !p.count) return null;
-  return <p className="ins-foot">{[c.count ? s(c.count === 1 ? '1 cancelled/rejected bill ({amount}) not counted' : '{n} cancelled/rejected bills ({amount}) not counted', {n: c.count, amount: money(c.valuePaise)}) : '', p.count ? s(p.count === 1 ? '1 bill waiting for approval ({amount}) not counted yet' : '{n} bills waiting for approval ({amount}) not counted yet',{n: p.count, amount: money(p.valuePaise)}) : ''].filter(Boolean).join(' · ')}</p>;
+  return <p className="ins-foot">{[c.count ? s(c.count === 1 ? '1 cancelled/rejected bill ({amount}) not counted' : '{n} cancelled/rejected bills ({amount}) not counted', {n: c.count, amount: money(c.valuePaise)}) : '', p.count ? s(p.count === 1 ? '1 bill waiting for approval ({amount}) not counted yet' : '{n} bills waiting for approval ({amount}) not counted yet', {n: p.count, amount: money(p.valuePaise)}) : ''].filter(Boolean).join(' · ')}</p>;
 }
 
-// ---------------- A1 profit ladder ----------------
-type Rung = {label: string; sub: string; value: number | null; sign?: '−'; key?: boolean; missing?: string};
-export function Ladder({d, go}: P) {
-  const {t, s} = useI();
-  if (!d.ladder) return <Card title={t('Operating profit')}><Compact>{t('Profit and cost figures are visible only to users with stock valuation access.')}</Compact></Card>;
-  const l = d.ladder, base = Math.max(l.netSalesPaise, 1);
-  const rows: Rung[] = [
-    {label: t('Net sales'), sub: t('Bill value without GST (estimated)'), value: l.netSalesPaise},
-    {label: t('Cost of goods sold'), sub: s('Cost price × pieces · cost known for {pct} of sales', {pct: pct(l.costCoveragePct, 0)}), value: l.cogsPaise, sign: '−'},
-    {label: t('Gross profit'), sub: t('On designs that have a cost price'), value: l.grossProfitPaise, key: true},
-    {label: t('Salaries & advances'), sub: t('Not tracked in the app yet'), value: null, sign: '−', missing: 'x'},
-    {label: t('Other expenses'), sub: t('Transport, rent, etc. — not tracked yet'), value: null, sign: '−', missing: 'x'},
-    {label: t('Operating profit'), sub: t('Before salaries & expenses (not recorded)'), value: l.operatingProfitPaise, key: true},
-  ];
-  return <Card title={t('Operating profit ladder')} hint={t('What is left from every rupee of sales')} aside={<Delta value={l.delta} suffix={t('vs previous')} />}>
-    {l.grossProfitPaise == null && l.netSalesPaise > 0 && <Compact action={<Open go={go} page="Products" label={t('Add cost prices')} />}>{t('No design billed in this period has a cost price, so profit cannot be worked out yet.')}</Compact>}
-    <div className="ins-ladder" role="list">
-      {rows.map(r => <div key={r.label} role="listitem" className={`ins-rung${r.key ? ' key' : ''}`}>
-        <div className="nm"><b>{r.sign ? `${r.sign} ` : ''}{r.label}</b><small>{r.sub}</small></div>
-        <div className="bar" aria-hidden="true">{r.value != null && <i style={{width: `${Math.min(100, Math.abs(r.value) / base * 100)}%`, background: r.key ? (r.value >= 0 ? 'var(--green)' : 'var(--red)') : r.sign ? 'var(--amber)' : 'var(--accent2)'}} />}</div>
-        <div className="vv">{r.value == null ? <NotRecorded /> : <><b className="num">{r.sign && r.value ? '−' : ''}{money(r.value)}</b><small className="num">{pct(Math.round(r.value / base * 1000) / 10)}</small></>}</div>
-      </div>)}
-    </div>
-    <p className="zl-note">{s('GST collected ({amount}, estimated) belongs to the government, so it is left out.', {amount: money(l.gstPaise)})} {t('Cost uses each design’s current average manufacturing cost.')}</p>
+// ---------------- billed vs collected ----------------
+export function Trend({d}: {d: AdminInsights}) {
+  const {t, s} = useI(); const tr = d.trend;
+  const hasTrendData = [...tr.billed, ...tr.collected, ...tr.previousBilled, ...tr.previousCollected].some(v => v > 0);
+  const labels = useMemo(() => tr.keys.map(k => bucketLabel(k, d.bucket)), [tr.keys, d.bucket]);
+  const unit = useUnit(d);
+  return <Card title={t('Billed vs collected')} hint={s('By {unit} · dashed line = previous period billed', {unit})} aside={tr.best && <Chip tone="violet">{s('Best {unit}: {key} ({amount})', {unit, key: bucketLabel(tr.best.key, d.bucket), amount: short(tr.best.valuePaise)})}</Chip>}>
+    {!hasTrendData ? <Compact>{t('Nothing billed or collected in this period.')}</Compact> : <>
+      <ComboChart labels={labels} bars={tr.billed} line={tr.collected} prev={tr.previousBilled} format={money} axisFormat={short} ariaLabel={t('Billed and collected over time')} names={{bars: t('Billed'), line: t('Collected'), prev: t('Previous period')}} height={440} />
+      <div className="zl-legend ins-legend"><span><i style={{background: 'var(--accent2)'}} />{t('Billed')}</span><span><i style={{background: 'var(--cyan)', height: 3}} />{t('Collected')}</span><span><i className="dash" />{t('Previous period')}</span></div>
+    </>}
   </Card>;
 }
 
-// ---------------- A2 money out ----------------
+// ---------------- cash ----------------
+export function Rupee({d}: {d: AdminInsights}) {
+  const {t, s} = useI(); const r = d.rupee;
+  return <Card title={t('Where every rupee went')} hint={t('Bills of this period: billed → collected → due')} aside={r.efficiencyPct != null && <Chip tone={r.efficiencyPct >= 70 ? 'green' : 'amber'}>{s('{pct} collected', {pct: pct(r.efficiencyPct, 0)})}</Chip>}>
+    {!r.billedPaise ? <Compact>{t('No bills in this period.')}</Compact> : <>
+      <Donut items={[{label: t('Collected on these bills'), value: r.collectedOnBillsPaise, color: 'var(--green)'}, {label: t('Still due'), value: r.stillDuePaise, color: 'var(--amber)'}]} format={short} centerLabel={t('billed')} ariaLabel={t('Where every rupee went')} size={150} />
+      <h4 className="ins-sub">{t('Bills by payment status')}</h4>
+      <StackBar ariaLabel={t('Bills by payment status')} format={short} items={[{label: s('Paid ({n})', {n: r.payStatus.PAID.count}), value: r.payStatus.PAID.paise, color: 'var(--green)'}, {label: s('Part paid ({n})', {n: r.payStatus.PARTIAL.count}), value: r.payStatus.PARTIAL.paise, color: 'var(--amber)'}, {label: s('Unpaid ({n})', {n: r.payStatus.UNPAID.count}), value: r.payStatus.UNPAID.paise, color: 'var(--red)'}]} />
+      <div className="ins-nrs"><span>{t('Discounts given')} <NotRecorded /></span><span>{t('Returns / credit notes')} <NotRecorded /></span></div>
+    </>}
+  </Card>;
+}
+export function PayModes({d}: {d: AdminInsights}) {
+  const {t} = useI();
+  const items = d.rupee.methods.map((m, i) => ({label: t(METHOD_LABEL[m.method] || m.method), value: m.valuePaise, color: SERIES[i] || OTHER}));
+  return <Card title={t('Collected by payment mode')} hint={t('Verified payments on these orders')}>
+    {items.length ? <Donut items={items} format={short} centerLabel={t('Collected')} ariaLabel={t('Collected by payment mode')} size={150} /> : <Compact>{t('No verified collections in this period.')}</Compact>}
+  </Card>;
+}
+export function BillsChart({d}: {d: AdminInsights}) {
+  const {t, s} = useI(); const unit = useUnit(d);
+  const labels = useMemo(() => d.trend.keys.map(k => bucketLabel(k, d.bucket)), [d.trend.keys, d.bucket]);
+  return <Card title={s('Bills per {unit}', {unit})} hint={`${t('Average bill')} ${short(d.kpi.avgBillPaise)}`} aside={<Delta value={d.deltas.avgBillPaise} />}>
+    {d.series.bills.some(v => v > 0) ? <BarChart labels={labels} values={d.series.bills} format={n => count(Math.round(n))} ariaLabel={s('Bills per {unit}', {unit})} height={220} labelGap={58} /> : <Compact>{t('No bills in this period.')}</Compact>}
+  </Card>;
+}
+
+// ---------------- profit ----------------
+/** Horizontal waterfall. Each bar starts where the one above ended, so what is on screen adds up. */
+export function Ladder({d, go}: P) {
+  const {t, s} = useI();
+  if (!d.ladder) return <Card title={t('Operating profit')}><Compact><Lock size={14} aria-hidden="true" style={{verticalAlign: -2}} /> {t('Profit and cost figures are visible only to users with stock valuation access.')}</Compact></Card>;
+  const l = d.ladder, net = l.netSalesPaise, gp = l.grossProfitPaise, cogs = l.cogsPaise;
+  const costed = l.costedNetPaise, uncosted = cogs == null ? 0 : Math.max(0, net - costed);
+  const lo = Math.min(0, gp ?? 0), hi = Math.max(net, cogs ?? 0, 1);
+  const seg = (a: number, b: number, color: string) => ({left: `${(Math.min(a, b) - lo) / (hi - lo) * 100}%`, width: `${Math.max(.5, Math.abs(b - a) / (hi - lo) * 100)}%`, background: color});
+  const ofNet = (v: number) => pct(net ? Math.round(v / net * 1000) / 10 : null);
+  const margin = gp != null && costed ? `${pct(Math.round(gp / costed * 1000) / 10)} ${t('margin')}` : '';
+  const profitColor = (gp ?? 0) >= 0 ? 'var(--green)' : 'var(--red)';
+  const rows: Array<{label: string; sub: string; value: number | null; minus?: boolean; key?: boolean; bar?: React.CSSProperties; note?: string}> = [
+    {label: t('Net sales'), sub: t('Bill value without GST (estimated)'), value: net, bar: seg(0, net, 'var(--accent2)'), note: net ? ofNet(net) : ''},
+    ...(uncosted > 0 ? [{label: t('Sales with no cost price'), sub: t('Left out of profit until a cost price is added'), value: uncosted, minus: true, bar: seg(costed, net, 'var(--s-other)'), note: ofNet(uncosted)}] : []),
+    {label: t('Cost of goods sold'), sub: s('Cost price × pieces · cost known for {pct} of sales', {pct: pct(l.costCoveragePct, 0)}), value: cogs, minus: true, bar: cogs == null ? undefined : seg(costed, costed - cogs, 'var(--amber)'), note: cogs == null ? '' : ofNet(cogs)},
+    {label: t('Gross profit'), sub: t('On designs that have a cost price'), value: gp, key: true, bar: gp == null ? undefined : seg(0, gp, profitColor), note: margin},
+    {label: t('Salaries & advances'), sub: t('Not tracked in the app yet'), value: null, minus: true},
+    {label: t('Other expenses'), sub: t('Transport, rent, etc. — not tracked yet'), value: null, minus: true},
+    {label: t('Operating profit'), sub: t('Before salaries & expenses (not recorded)'), value: l.operatingProfitPaise, key: true, bar: l.operatingProfitPaise == null ? undefined : seg(0, l.operatingProfitPaise, profitColor), note: margin},
+  ];
+  return <Card title={t('Operating profit ladder')} hint={t('What is left from every rupee of sales')} aside={<Delta value={l.delta} suffix={t('vs previous')} />}>
+    {gp == null && net > 0 && <Compact action={<Open go={go} page="Products" label={t('Add cost prices')} />}>{t('No design billed in this period has a cost price, so profit cannot be worked out yet.')}</Compact>}
+    <div className="ins-ladder" role="list">
+      {rows.map(r => <div key={r.label} role="listitem" className={`ins-rung${r.key ? ' key' : ''}`}>
+        <div className="nm"><b>{r.minus ? '− ' : ''}{r.label}</b><small>{r.sub}</small></div>
+        <div className={`bar${r.bar ? '' : ' none'}`} aria-hidden="true">{r.bar && <i style={r.bar} />}</div>
+        <div className="vv">{r.value == null ? <NotRecorded /> : <><b className="num" title={money(r.value)}>{r.minus && r.value ? '−' : ''}{short(r.value)}</b>{r.note && <small className="num">{r.note}</small>}</>}</div>
+      </div>)}
+    </div>
+    <p className="zl-note">{s('GST collected ({amount}, estimated) belongs to the government, so it is left out.', {amount: short(l.gstPaise)})} {t('Cost uses each design’s current average manufacturing cost.')}</p>
+  </Card>;
+}
+export function ProfitTrend({d}: {d: AdminInsights}) {
+  const {t, s} = useI(); const unit = useUnit(d);
+  const labels = useMemo(() => d.trend.keys.map(k => bucketLabel(k, d.bucket)), [d.trend.keys, d.bucket]);
+  const series = d.series.profit;
+  if (!series) return null;
+  return <Card title={s('Gross profit by {unit}', {unit})} hint={t('On designs that have a cost price')}>
+    {d.kpi.grossProfitPaise == null || !series.some(v => v !== 0) ? <Compact>{t('Add cost prices to see profit over time.')}</Compact>
+      : <TrendChart labels={labels} current={series} format={short} ariaLabel={s('Gross profit by {unit}', {unit})} curName={t('Gross profit')} prevName="" height={280} />}
+  </Card>;
+}
 export function MoneyOut({d, go}: P) {
   const {t, s} = useI(); const m = d.moneyOut;
   const rows = [{label: t('Purchases from suppliers'), sub: s('{n} purchase bills, before GST', {n: m.purchaseBills}), value: m.anyPurchaseRecorded ? m.purchasesPaise : null, color: 'var(--s1)'},
-    {label: t('GST payable'), sub: t('Estimate: GST on sales − input GST'), value: m.gstPayablePaise, color: 'var(--s3)', est: true},
-    {label: t('Salaries & advances'), sub: t('Not tracked yet'), value: null, color: 'var(--s2)'}, {label: t('Transport & other expenses'), sub: t('Not tracked yet'), value: null, color: 'var(--s5)'}];
+    {label: t('GST payable'), sub: t('Estimate: GST on sales − input GST'), value: m.gstPayablePaise, color: 'var(--amber)', est: true},
+    {label: t('Salaries & advances'), sub: t('Not tracked yet'), value: null, color: ''}, {label: t('Transport & other expenses'), sub: t('Not tracked yet'), value: null, color: ''}];
   const max = Math.max(1, ...rows.map(r => r.value || 0));
   return <Card title={t('Where the money went out')} hint={t('Money paid or owed out of the business this period')}>
     {!m.anyPurchaseRecorded && <Compact action={<Open go={go} page="Inventory" label={t('Record purchases')} />}>{t('No purchases recorded yet.')}</Compact>}
     <div className="ins-ladder">{rows.map(r => <div className="ins-rung" key={r.label}>
       <div className="nm"><b>{r.label}</b><small>{r.sub}</small></div>
-      <div className="bar" aria-hidden="true">{r.value != null && <i style={{width: `${r.value / max * 100}%`, background: r.color}} />}</div>
-      <div className="vv">{r.value == null ? <NotRecorded /> : <><b className="num">{money(r.value)}</b>{r.est && <Chip tone="amber">{t('estimated')}</Chip>}</>}</div>
+      <div className={`bar${r.value == null ? ' none' : ''}`} aria-hidden="true">{r.value != null && <i style={{left: 0, width: `${Math.max(.5, r.value / max * 100)}%`, background: r.color}} />}</div>
+      <div className="vv">{r.value == null ? <NotRecorded /> : <><b className="num" title={money(r.value)}>{short(r.value)}</b>{r.est && <small>{t('estimated')}</small>}</>}</div>
     </div>)}</div>
-    {m.anyPurchaseRecorded && <p className="zl-note">{s('Paid to suppliers this period: {amount}', {amount: money(m.paidToSuppliersPaise)})}</p>}
+    {m.anyPurchaseRecorded && <p className="zl-note">{s('Paid to suppliers this period: {amount}', {amount: short(m.paidToSuppliersPaise)})}</p>}
+  </Card>;
+}
+export function Gst({d}: {d: AdminInsights}) {
+  const {t, s} = useI(); const g = d.gst;
+  const items = [{key: 'out', label: t('GST on sales'), value: g.outputPaise, show: short(g.outputPaise), title: money(g.outputPaise), color: 'var(--s2)'},
+    ...(g.inputPaise != null ? [{key: 'in', label: t('Input GST'), value: g.inputPaise, show: short(g.inputPaise), title: money(g.inputPaise), color: 'var(--s3)'}] : []),
+    {key: 'net', label: t('Net GST payable'), value: Math.max(0, g.netPaise), show: short(g.netPaise), title: money(g.netPaise), color: 'var(--amber)'}];
+  return <Card title={t('GST snapshot')} hint={g.inputPaise == null ? t('input GST not recorded') : undefined} aside={<Chip tone="amber">{t('estimate')}</Chip>}>
+    <RankBars items={items} ariaLabel={t('GST snapshot')} />
+    {g.gstCoveragePct != null && g.gstCoveragePct < 100 && <p className="ins-warn"><AlertTriangle size={15} aria-hidden="true" /> <span>{s('GST rate set for {pct} of sales', {pct: pct(g.gstCoveragePct, 0)})}</span></p>}
   </Card>;
 }
 
-// ---------------- B1 where every rupee went ----------------
-export function Rupee({d}: {d: AdminInsights}) {
-  const {t, s} = useI(); const r = d.rupee;
-  const rows: Array<[string, number | null, string?]> = [[t('Billed (incl. GST)'), r.billedPaise], [t('Discounts given'), r.discountsPaise], [t('Returns / credit notes'), r.returnsPaise], [t('Collected on these bills'), r.collectedOnBillsPaise, 'var(--green)'], [t('Still due'), r.stillDuePaise, 'var(--amber)']];
-  return <Card title={t('Where every rupee went')} hint={t('Bills of this period: billed → collected → due')} aside={r.efficiencyPct != null && <Chip tone={r.efficiencyPct >= 70 ? 'green' : 'amber'}>{s('{pct} collected', {pct: pct(r.efficiencyPct, 0)})}</Chip>}>
-    {!r.billedPaise ? <Compact>{t('No bills in this period.')}</Compact> : <>
-      <div className="zl-panel">{rows.map(([l, v, c]) => <div className="zl-row" key={l}><span>{l}</span>{v == null ? <NotRecorded /> : <b style={c ? {color: c} : undefined}>{money(v)}</b>}</div>)}</div>
-      <h4 className="ins-sub">{t('Bills by payment status')}</h4>
-      <StackBar ariaLabel={t('Bills by payment status')} format={money} items={[{label: s('Paid ({n})', {n: r.payStatus.PAID.count}), value: r.payStatus.PAID.paise, color: 'var(--green)'}, {label: s('Part paid ({n})', {n: r.payStatus.PARTIAL.count}), value: r.payStatus.PARTIAL.paise, color: 'var(--amber)'}, {label: s('Unpaid ({n})', {n: r.payStatus.UNPAID.count}), value: r.payStatus.UNPAID.paise, color: 'var(--red)'}]} />
-      <p className="zl-note">{t('Cash vs credit sale and discounts are not recorded on bills yet.')}</p>
-    </>}
-  </Card>;
-}
-
-// ---------------- B2 billed vs collected ----------------
-export function Trend({d}: {d: AdminInsights}) {
-  const {t, s} = useI(); const tr = d.trend;
-  const hasTrendData = [...tr.billed, ...tr.collected, ...tr.previousBilled, ...tr.previousCollected].some(v => v > 0);
-  const labels = useMemo(() => tr.keys.map(k => bucketLabel(k, d.bucket)), [tr.keys, d.bucket]);
-  const unit = d.bucket === 'hour' ? t('hour') : d.bucket === 'day' ? t('day') : t('month');
-  const methods = d.rupee.methods.map((m, i) => ({label: t(METHOD_LABEL[m.method] || m.method), value: m.valuePaise, color: SERIES[i] || OTHER}));
-  return <Card title={t('Billed vs collected')} hint={s('By {unit} · dashed line = previous period billed', {unit})} aside={tr.best && <Chip tone="violet">{s('Best {unit}: {key} ({amount})', {unit, key: bucketLabel(tr.best.key, d.bucket), amount: short(tr.best.valuePaise)})}</Chip>}>
-    {!hasTrendData && <Compact>{t('Nothing billed or collected in this period.')}</Compact>}
-    <ComboChart labels={labels} bars={tr.billed} line={tr.collected} prev={tr.previousBilled} format={money} axisFormat={short} ariaLabel={t('Billed and collected over time')} names={{bars: t('Billed'), line: t('Collected'), prev: t('Previous period')}} />
-    <div className="zl-legend ins-legend"><span><i style={{background: 'var(--accent2)'}} />{t('Billed')}</span><span><i style={{background: 'var(--cyan)', height: 3}} />{t('Collected')}</span><span><i className="dash" />{t('Previous period')}</span></div>
-    <h4 className="ins-sub">{t('Collected by payment mode')}</h4>
-    {methods.length ? <StackBar ariaLabel={t('Collected by payment mode')} format={money} items={methods} /> : <p className="zl-note">{t('No verified collections in this period.')}</p>}
-  </Card>;
-}
-
-// ---------------- C1 design quadrant ----------------
+// ---------------- designs ----------------
 export function DesignQuadrant({d, go}: P) {
   const {t, s} = useI();
   const pts = useMemo(() => d.designs.filter(x => x.profitPerPiecePaise != null && x.pieces > 0).map(x => ({id: x.id, label: `${x.sku} · ${x.name}`, x: x.pieces, y: x.profitPerPiecePaise!})), [d.designs]);
@@ -142,47 +185,65 @@ export function DesignQuadrant({d, go}: P) {
   const n: Record<Zone, number> = {win: 0, popular: 0, slow: 0, fix: 0}; for (const p of pts) n[zoneOf(p.x, p.y, ax, ay)]++;
   const missing = d.completeness.designsNoCost;
   return <Card title={t('Which designs really make money')} hint={t('Pieces sold vs profit per piece · dashed lines = average')}>
-    {pts.length < 2 ? <Compact action={missing > 0 ? <Open go={go} page="Products" label={t('Add cost prices')} /> : undefined}>{missing > 0 ? s(missing === 1 ? 'Needs at least 2 sold designs with a cost price — 1 sold design has none.' : 'Needs at least 2 sold designs with a cost price — {n} sold designs have none.',{n: missing}) : t('Needs at least 2 sold designs with a cost price.')}</Compact> : <>
+    {!d.canSeeCost ? <Compact><Lock size={14} aria-hidden="true" style={{verticalAlign: -2}} /> {t('Profit and cost figures are visible only to users with stock valuation access.')}</Compact>
+      : pts.length < 2 ? <Compact action={missing > 0 ? <Open go={go} page="Products" label={t('Add cost prices')} /> : undefined}>{missing > 0 ? s(missing === 1 ? 'Needs at least 2 sold designs with a cost price — 1 sold design has none.' : 'Needs at least 2 sold designs with a cost price — {n} sold designs have none.', {n: missing}) : t('Needs at least 2 sold designs with a cost price.')}</Compact> : <>
       <Quadrant points={pts} ax={ax} ay={ay} formatY={short} ariaLabel={t('Designs by pieces sold and profit per piece')} zoneName={zones} axisNames={{x: t('Pieces sold'), y: t('Profit per piece')}} />
       <div className="ins-zones">{(['win', 'popular', 'slow', 'fix'] as Zone[]).map(z => <div key={z} className={`ins-zone-card ${z}`}><b>{zones[z]} <span className="num">({n[z]})</span></b><small>{tips[z]}</small></div>)}</div>
-      {missing > 0 && <Compact action={<Open go={go} page="Products" label={t('Fix')} />}>{s(missing === 1 ? '1 sold design has no cost price and is not plotted.' : '{n} sold designs have no cost price and are not plotted.',{n: missing})}</Compact>}
+      {missing > 0 && <Compact action={<Open go={go} page="Products" label={t('Fix')} />}>{s(missing === 1 ? '1 sold design has no cost price and is not plotted.' : '{n} sold designs have no cost price and are not plotted.', {n: missing})}</Compact>}
     </>}
   </Card>;
 }
 
-// ---------------- C2 top lists ----------------
-type Tab = 'profit' | 'pieces' | 'category' | 'dealers';
+type Tab = 'profit' | 'pieces' | 'category';
 export function TopLists({d}: {d: AdminInsights}) {
   const {t} = useI();
-  const [tab, setTab] = useState<Tab>(d.canSeeCost ? 'profit' : 'pieces');
-  const opts: Array<[Tab, string]> = [...(d.canSeeCost ? [['profit', t('By profit')] as [Tab, string]] : []), ['pieces', t('By pieces')], ['category', t('By category')], ['dealers', t('Top dealers')]];
-  const designs = useMemo(() => tab === 'profit' ? d.designs.filter(x => x.profitPaise != null).sort((a, b) => b.profitPaise! - a.profitPaise!) : d.designs.slice().sort((a, b) => b.pieces - a.pieces), [d.designs, tab]);
   const cost = d.canSeeCost;
+  const [tab, setTab] = useState<Tab>(cost ? 'profit' : 'pieces');
+  const opts: Array<[Tab, string]> = [...(cost ? [['profit', t('By profit')] as [Tab, string]] : []), ['pieces', t('By pieces')], ['category', t('By category')]];
+  const items = useMemo(() => {
+    if (tab === 'category') return d.categories.slice(0, 7).map(x => ({key: x.name, label: x.name, value: x.salesPaise, show: short(x.salesPaise), title: money(x.salesPaise),
+      sub: `${count(x.pieces)} ${t('pcs')}${cost ? ` · ${t('Profit')} ${x.profitPaise || x.complete ? `${short(x.profitPaise)}${x.complete ? '' : ' *'}` : t('no cost')}` : ''}`}));
+    if (tab === 'profit') return d.designs.filter(x => x.profitPaise != null).sort((a, b) => b.profitPaise! - a.profitPaise!).slice(0, 7).map(x => ({key: x.id, label: x.name, value: x.profitPaise!, show: short(x.profitPaise), title: money(x.profitPaise), sub: `${x.sku} · ${count(x.pieces)} ${t('pcs')} · ${pct(x.marginPct, 0)} ${t('margin')}`}));
+    return d.designs.slice().sort((a, b) => b.pieces - a.pieces).slice(0, 7).map(x => ({key: x.id, label: x.name, value: x.pieces, show: `${count(x.pieces)} ${t('pcs')}`, sub: `${x.sku} · ${short(x.salesPaise)}`}));
+  }, [d.designs, d.categories, tab, cost, t]);
   return <Card title={t('Top designs')} aside={<Segmented value={tab} onChange={setTab} options={opts} label={t('Rank by')} />}>
-    {!d.designs.length ? <Compact>{t('No bills in this period.')}</Compact> : tab === 'profit' && !designs.length ? <Compact>{t('No design sold in this period has a cost price yet, so it cannot be ranked by profit.')}</Compact> : <div className="ins-tbl-wrap"><table className="ins-tbl">
-      {tab === 'dealers' ? <>
-        <thead><tr><th>#</th><th>{t('Dealer')}</th><th className="r">{t('Bills')}</th><th className="r">{t('Billed')}</th><th className="r">{t('Due now')}</th></tr></thead>
-        <tbody>{d.dealers.slice(0, 8).map((x, i) => <tr key={x.id}><td className="rk">{i + 1}</td><td>{x.name}</td><td className="r num">{x.bills}</td><td className="r num">{money(x.billedPaise)}</td><td className="r num">{x.duePaise ? money(x.duePaise) : '—'}</td></tr>)}</tbody>
-      </> : tab === 'category' ? <>
-        <thead><tr><th>#</th><th>{t('Category')}</th><th className="r">{t('Pieces')}</th><th className="r">{t('Sales')}</th>{cost && <th className="r">{t('Profit')}</th>}</tr></thead>
-        <tbody>{d.categories.slice(0, 8).map((x, i) => <tr key={x.name}><td className="rk">{i + 1}</td><td>{x.name}</td><td className="r num">{count(x.pieces)}</td><td className="r num">{money(x.salesPaise)}</td>{cost && <td className="r num">{money(x.profitPaise)}{!x.complete && <small title={t('Some designs have no cost price')}> *</small>}</td>}</tr>)}</tbody>
-      </> : <>
-        <thead><tr><th>#</th><th>{t('Design')}</th><th className="r">{t('Pieces')}</th><th className="r">{t('Sales')}</th>{cost && <><th className="r">{t('Profit')}</th><th className="r">{t('Margin')}</th></>}</tr></thead>
-        <tbody>{designs.slice(0, 8).map((x, i) => <tr key={x.id}><td className="rk">{i + 1}</td><td><b className="mono">{x.sku}</b> <span className="ins-dim">{x.name}</span></td><td className="r num">{count(x.pieces)}</td><td className="r num">{money(x.salesPaise)}</td>{cost && <><td className="r num">{x.profitPaise == null ? <span className="ins-dim">{t('no cost')}</span> : money(x.profitPaise)}</td><td className="r num">{pct(x.marginPct, 0)}</td></>}</tr>)}</tbody>
-      </>}
-    </table></div>}
+    {!d.designs.length ? <Compact>{t('No bills in this period.')}</Compact> : tab === 'profit' && !items.length ? <Compact>{t('No design sold in this period has a cost price yet, so it cannot be ranked by profit.')}</Compact> : <RankBars items={items} ariaLabel={t('Top designs')} />}
     {tab === 'category' && cost && d.categories.some(c => !c.complete) && <p className="zl-note">{t('* some designs in this category have no cost price, so profit is understated.')}</p>}
   </Card>;
 }
 
-// ---------------- D1 salespeople ----------------
+// ---------------- dealers ----------------
+export function DealerShare({d}: {d: AdminInsights}) {
+  const {t, s} = useI(); const ds = d.dealerStats;
+  const items = d.dealerShare.map((x, i) => ({label: x.label === 'Others' ? t('Others') : x.label, value: x.valuePaise, color: x.label === 'Others' ? OTHER : SERIES[i]}));
+  return <Card title={t('Dealer concentration & growth')} hint={t('Share of this period’s sales')} aside={<Delta value={d.deltas.activeDealers} />}>
+    {items.length ? <Donut items={items} format={short} centerLabel={t('billed')} ariaLabel={t('Share of sales by dealer')} size={150} /> : <Compact>{t('No bills in this period.')}</Compact>}
+    {ds.active > 0 && <><h4 className="ins-sub">{s('{n} active dealers', {n: count(d.kpi.activeDealers)})}</h4>
+      <StackBar ariaLabel={t('Dealers')} format={n => count(n)} items={[{label: t('New'), value: ds.new, color: 'var(--cyan)'}, {label: t('Returning'), value: ds.returning, color: 'var(--accent2)'}]} /></>}
+  </Card>;
+}
+export function TopDealers({d}: {d: AdminInsights}) {
+  const {t, s} = useI();
+  return <Card title={t('Top dealers')} hint={t('Billed in this period')}>
+    {d.dealers.length ? <RankBars ariaLabel={t('Top dealers')} items={d.dealers.slice(0, 6).map(x => ({key: x.id, label: x.name, value: x.billedPaise, show: short(x.billedPaise), title: money(x.billedPaise), sub: `${s('{n} bills', {n: x.bills})}${x.duePaise ? ` · ${t('Due now')} ${short(x.duePaise)}` : ''}`}))} /> : <Compact>{t('No bills in this period.')}</Compact>}
+  </Card>;
+}
+export function IdleDealers({d, idleDays, setIdleDays}: {d: AdminInsights; idleDays: number; setIdleDays: (n: number) => void}) {
+  const {t, s} = useI();
+  return <Card title={t('Dealers who stopped ordering')} hint={d.dealerStats.idle ? s('{n} slipping away (no bill in {d} days)', {n: d.dealerStats.idle, d: d.idleDays}) : t('No dealer is slipping away')} aside={<label className="ins-inline"><span className="zl-sr">{t('No bill for')}</span><select className="zl-select" value={idleDays} onChange={e => setIdleDays(Number(e.target.value))}>{[30, 45, 60, 90].map(n => <option key={n} value={n}>{s('{n} days', {n})}</option>)}</select></label>}>
+    {d.idle.length ? <RankBars ariaLabel={t('Dealers who stopped ordering')} items={d.idle.slice(0, 6).map(x => ({key: x.id, label: x.name, value: x.days, show: s('{n} days', {n: x.days}), color: x.days > 90 ? 'var(--red)' : 'var(--amber)', sub: s('Lifetime {amount}', {amount: short(x.lifetimePaise)})}))} />
+      : <Compact>{s('Every dealer has ordered in the last {n} days.', {n: idleDays})}</Compact>}
+  </Card>;
+}
+
+// ---------------- team ----------------
 export function Leaderboard({d, go}: P) {
   const {t, s} = useI();
   // Salespeople with nothing this period are counted in one line, not drawn as empty bars.
   const busy = d.salespeople.filter(p => p.billedPaise > 0 || p.collectedPaise > 0 || p.targetPaise != null), idle = d.salespeople.length - busy.length;
   const list = busy.slice(0, 8);
   const max = Math.max(1, ...list.map(p => Math.max(p.billedPaise, p.collectedPaise)));
-  return <Card title={t('Salesperson leaderboard')} hint={t('Billed vs collected this period')} aside={<Open go={go} page="Performance" label={t('Open Performance')} />}>
+  return <Card title={t('Salesperson leaderboard')} hint={t('Billed vs collected this period')}>
     {!list.length ? <Compact action={<Open go={go} page="Salesmen" label={t('Add salesmen')} />}>{t('No salesperson has billed in this period.')}</Compact> :
       <div className="ins-people">{list.map(p => <button type="button" key={p.id} className="ins-person" onClick={() => go('Performance')} aria-label={s('{name}: billed {billed}, collected {collected}', {name: p.name, billed: money(p.billedPaise), collected: money(p.collectedPaise)})}>
         <span className="top"><b>{p.name}{p.role !== 'salesman' && <small> · {t(p.role === 'owner' ? 'Owner' : 'Accounts')}</small>}</b><span className="ins-chips">{p.targetPct != null && <Chip tone={p.targetPct >= 100 ? 'green' : p.targetPct >= 50 ? 'blue' : 'amber'}>{s('{pct} of target', {pct: pct(p.targetPct, 0)})}</Chip>}<Delta value={p.delta} /></span></span>
@@ -193,79 +254,68 @@ export function Leaderboard({d, go}: P) {
       {idle > 0 && <p className="zl-note">{s(idle === 1 ? '1 more salesperson has no bills or collections this period.' : '{n} more salespeople have no bills or collections this period.', {n: idle})}</p>}</div>}
   </Card>;
 }
-
-// ---------------- D2 dealers ----------------
-export function Dealers({d, go, idleDays, setIdleDays}: P & {idleDays: number; setIdleDays: (n: number) => void}) {
-  const {t, s} = useI();
-  const items = d.dealerShare.map((x, i) => ({label: x.label === 'Others' ? t('Others') : x.label, value: x.valuePaise, color: x.label === 'Others' ? OTHER : SERIES[i]}));
-  return <Card title={t('Dealer concentration & growth')} hint={t('Share of this period’s sales')} aside={<Open go={go} page="Customers" label={t('Open Dealers')} />}>
-    {items.length ? <Donut items={items} format={short} centerLabel={t('billed')} ariaLabel={t('Share of sales by dealer')} size={170} /> : <Compact>{t('No bills in this period.')}</Compact>}
-    <div className="ins-idle-h"><h4 className="ins-sub">{t('Dealers who stopped ordering')}</h4>
-      <label className="ins-inline">{t('No bill for')} <select className="zl-select" value={idleDays} onChange={e => setIdleDays(Number(e.target.value))}>{[30, 45, 60, 90].map(n => <option key={n} value={n}>{s('{n} days', {n})}</option>)}</select></label></div>
-    {d.idle.length ? <ul className="ins-list">{d.idle.slice(0, 5).map(x => <li key={x.id}><span>{x.name}<small>{s('Last bill {days} days ago · lifetime {amount}', {days: x.days, amount: short(x.lifetimePaise)})}</small></span><Chip tone={x.days > 90 ? 'red' : 'amber'}>{s('{n} days', {n: x.days})}</Chip></li>)}</ul>
-      : <p className="zl-note">{s('Every dealer has ordered in the last {n} days.', {n: idleDays})}</p>}
+export function TeamTarget({d, go}: P) {
+  const {t, s} = useI(); const tm = d.team;
+  return <Card title={t('Sales team')} hint={tm.targetPct != null ? t('of team target achieved') : t('No targets set for this period')}>
+    {tm.targetPct != null ? <div className="zl-chart"><Gauge value={tm.targetPct / 100} label={pct(tm.targetPct, 0)} sub={t('Target')} ariaLabel={`${t('of team target achieved')}: ${pct(tm.targetPct, 0)}`} /></div> : <Compact action={<Open go={go} page="Targets" label={t('Open Targets')} />}>{t('No targets set for this period')}</Compact>}
+    <ul className="ins-facts">
+      <li><CheckCircle2 size={15} aria-hidden="true" /><span>{tm.best ? s('Best: {name}', {name: tm.best.name}) : t('No sales yet')}</span></li>
+      {tm.needsHelp && <li className="warn"><AlertTriangle size={15} aria-hidden="true" /><span>{s('Needs help: {name} ({pct})', {name: tm.needsHelp.name, pct: pct(tm.needsHelp.targetPct, 0)})}</span></li>}
+    </ul>
   </Card>;
 }
 
-// ---------------- E1 ageing ----------------
-const AGE_COLOR = {'0-7': 'var(--blue)', '8-30': 'var(--amber)', '31-60': 'var(--s5)', '60+': 'var(--red)'} as const;
-export function Ageing({d, go}: P) {
-  const {t, s} = useI();
-  return <Card title={t('Due ageing')} hint={t('All unpaid bills, by days since billing')} aside={<Open go={go} page="Bills" label={t('Open Bills')} />}>
-    {!d.money.bills ? <Compact>{t('No money is due. Every bill is paid.')}</Compact> : <>
-      <StackBar ariaLabel={t('Due by age')} format={money} items={d.ageing.map(a => ({label: s('{range} days ({n})', {range: a.key, n: a.count}), value: a.paise, color: AGE_COLOR[a.key]}))} />
-      <h4 className="ins-sub">{t('Oldest dues')}</h4>
-      <ul className="ins-list">{d.overdueDealers.map(x => <li key={x.id}><span>{x.name}<small>{s('{n} unpaid bills · oldest {days} days', {n: x.bills, days: x.oldest})}</small></span><b className="num">{money(x.duePaise)}</b></li>)}</ul>
+// ---------------- dues ----------------
+const AGE_COLOR = {'0-7': 'var(--blue)', '8-30': 'var(--amber)', '31-60': 'color-mix(in srgb,var(--amber) 45%,var(--red))', '60+': 'var(--red)'} as const;
+export function Ageing({d}: {d: AdminInsights}) {
+  const {t, s} = useI(); const m = d.money;
+  return <Card title={t('Due ageing')} hint={t('All unpaid bills, by days since billing')} aside={m.over30.paise > 0 ? <Chip tone="red">{s('Over 30 days: {amount}', {amount: short(m.over30.paise)})}</Chip> : undefined}>
+    {!m.bills ? <Compact>{t('No money is due. Every bill is paid.')}</Compact> : <>
+      <Columns ariaLabel={t('Due by age')} items={d.ageing.map(a => ({key: a.key, label: s('{range} days', {range: a.key}), sub: s('{n} bills', {n: a.count}), value: a.paise, show: short(a.paise), title: money(a.paise), color: AGE_COLOR[a.key]}))} />
+      <p className="zl-note">{s('Today {a} · older {b}', {a: short(m.dueTodayPaise), b: short(m.dueOlderPaise)})}{m.oldest ? ` · ${s('Oldest: {name}, {days} days', {name: m.oldest.customerName, days: m.oldest.days})}` : ''}</p>
     </>}
   </Card>;
 }
-
-// ---------------- E2 stock ----------------
-export function Stock({d, go}: P) {
-  const {t, s} = useI(); const st = d.stock;
-  return <Card title={t('Stock health')} aside={<Open go={go} page="Inventory" label={t('Open Inventory')} />}>
-    {!st.tracked ? <Compact action={<Open go={go} page="Products" label={t('Add designs')} />}>{t('No designs in stock yet.')}</Compact> : <div className="ins-stock">
-      <div><h4 className="ins-sub">{s('Low stock ({n})', {n: st.low.length})}</h4>{st.low.length ? <ul className="ins-list">{st.low.slice(0, 4).map(x => <li key={x.id}><span><b className="mono">{x.sku}</b><small>{x.name}</small></span><Chip tone={x.available <= 0 ? 'red' : 'amber'}>{s('{a} left · reorder {r}', {a: x.available, r: x.reorder})}</Chip></li>)}</ul> : <p className="zl-note">{t('Nothing below reorder level.')}</p>}</div>
-      <div><h4 className="ins-sub">{s('Dead stock ({n})', {n: st.dead.length})}</h4>
-        {st.deadValuePaise != null && st.dead.length > 0 && <p className="ins-big num">{money(st.deadValuePaise)} <small>{t('locked in stock')}</small></p>}
-        {st.dead.length ? <ul className="ins-list">{st.dead.slice(0, 4).map(x => <li key={x.id}><span><b className="mono">{x.sku}</b><small>{x.lastSale ? s('{n} pcs · last sold {date}', {n: x.stock, date: bucketLabel(x.lastSale, 'day')}) : s('{n} pcs · never sold', {n: x.stock})}</small></span>{x.valuePaise != null && <b className="num">{short(x.valuePaise)}</b>}</li>)}</ul> : <p className="zl-note">{s('Everything in stock sold in the last {n} days.', {n: st.deadDays})}</p>}
-        {st.deadUncosted > 0 && <p className="zl-note">{s('{n} of these have no cost price, so the locked value is understated.', {n: st.deadUncosted})}</p>}</div>
-      <div><h4 className="ins-sub">{t('Fast movers')}</h4>{st.fast.length ? <ul className="ins-list">{st.fast.slice(0, 4).map(x => <li key={x.id}><span><b className="mono">{x.sku}</b><small>{x.name}</small></span><span className="ins-dim num">{s('{n} sold · {a} left', {n: x.pieces, a: x.available ?? '—'})}</span></li>)}</ul> : <p className="zl-note">{t('No sales in this period.')}</p>}</div>
-    </div>}
+export function OldestDues({d}: {d: AdminInsights}) {
+  const {t, s} = useI();
+  return <Card title={t('Oldest dues')} hint={t('Dealers to call first')}>
+    {d.overdueDealers.length ? <RankBars ariaLabel={t('Oldest dues')} items={d.overdueDealers.map(x => ({key: x.id, label: x.name, value: x.duePaise, show: short(x.duePaise), title: money(x.duePaise), color: x.oldest > 60 ? 'var(--red)' : x.oldest > 30 ? 'var(--amber)' : 'var(--blue)', sub: s('{n} unpaid bills · oldest {days} days', {n: x.bills, days: x.oldest})}))} /> : <Compact>{t('No money is due. Every bill is paid.')}</Compact>}
   </Card>;
 }
 
-// ---------------- mini cards ----------------
-function Mini({label, value, sub, split, extra, open}: {label: string; value: React.ReactNode; sub: React.ReactNode; split?: Array<{v: number; c: string; l: string}>; extra?: React.ReactNode; open: React.ReactNode}) {
-  const tot = split?.reduce((a, x) => a + x.v, 0) || 0;
-  return <section className="zl-card ins-mini"><span className="lbl">{label}</span><b className="val num">{value}</b><span className="sub">{sub}</span>
-    {split && <span className="zl-stack ins-ministack" role="img" aria-label={split.map(x => `${x.l} ${x.v}`).join(', ')}>{tot > 0 ? split.filter(x => x.v > 0).map(x => <i key={x.l} style={{flex: x.v, background: x.c}} />) : <i style={{flex: 1, background: 'var(--line)'}} />}</span>}
-    {extra && <span className="sub">{extra}</span>}<span className="ins-mini-open">{open}</span></section>;
+// ---------------- stock ----------------
+export function LowStock({d}: {d: AdminInsights}) {
+  const {t, s} = useI(); const st = d.stock;
+  return <Card title={s('Low stock ({n})', {n: st.low.length})} hint={t('Bar = stock left against the reorder level')}>
+    {st.low.length ? <RankBars ariaLabel={t('Low stock')} max={100} items={st.low.slice(0, 5).map(x => ({key: x.id, label: x.name, sub: x.sku, value: x.reorder ? Math.max(0, x.available) / x.reorder * 100 : 0, show: s('{a} left · reorder {r}', {a: x.available, r: x.reorder}), color: x.available <= 0 ? 'var(--red)' : 'var(--amber)'}))} /> : <Compact>{t('Nothing below reorder level.')}</Compact>}
+  </Card>;
 }
-export function MiniCards({d, go}: P) {
-  const {t, s} = useI(); const ds = d.dealerStats, tm = d.team, m = d.money, g = d.gst;
-  return <div className="ins-g4">
-    <Mini label={t('Dealers')} value={count(ds.active)} sub={s('{a} new · {b} returning', {a: ds.new, b: ds.returning})} split={[{v: ds.new, c: 'var(--cyan)', l: t('New')}, {v: ds.returning, c: 'var(--accent2)', l: t('Returning')}]} extra={ds.idle ? <span className="warn">{s('{n} slipping away (no bill in {d} days)', {n: ds.idle, d: d.idleDays})}</span> : t('No dealer is slipping away')} open={<Open go={go} page="Customers" label={t('Open Dealers')} />} />
-    <Mini label={t('Sales team')} value={tm.targetPct != null ? pct(tm.targetPct, 0) : '—'} sub={tm.targetPct != null ? t('of team target achieved') : t('No targets set for this period')} split={tm.targetPct != null ? [{v: Math.min(100, tm.targetPct), c: 'var(--green)', l: t('Achieved')}, {v: Math.max(0, 100 - tm.targetPct), c: 'var(--line2)', l: t('Remaining')}] : undefined}
-      extra={<>{tm.best ? s('Best: {name}', {name: tm.best.name}) : t('No sales yet')}{tm.needsHelp && <><br /><span className="warn">{s('Needs help: {name} ({pct})', {name: tm.needsHelp.name, pct: pct(tm.needsHelp.targetPct, 0)})}</span></>}</>} open={<Open go={go} page={tm.targetPct != null ? 'Targets' : 'Salesmen'} label={tm.targetPct != null ? t('Open Targets') : t('Open Salesmen')} />} />
-    <Mini label={t('Money to collect')} value={money(m.duePaise)} sub={s('Today {a} · older {b}', {a: short(m.dueTodayPaise), b: short(m.dueOlderPaise)})} split={[{v: m.dueTodayPaise, c: 'var(--blue)', l: t('Today')}, {v: m.dueOlderPaise, c: 'var(--amber)', l: t('Older')}]} extra={m.oldest ? s('Oldest: {name}, {days} days', {name: m.oldest.customerName, days: m.oldest.days}) : t('Nothing due')} open={<Open go={go} page="Bills" label={t('Open Bills')} />} />
-    <Mini label={t('GST snapshot')} value={money(g.netPaise)} sub={<><Chip tone="amber">{t('estimate')}</Chip> {t('net payable')}</>} split={g.inputPaise != null ? [{v: g.outputPaise, c: 'var(--s3)', l: t('GST on sales')}, {v: g.inputPaise, c: 'var(--s4)', l: t('Input GST')}] : undefined}
-      extra={<>{s('On sales {a}', {a: short(g.outputPaise)})} · {g.inputPaise != null ? s('input {b}', {b: short(g.inputPaise)}) : t('input GST not recorded')}{g.gstCoveragePct != null && g.gstCoveragePct < 100 && <><br /><span className="warn">{s('GST rate set for {pct} of sales', {pct: pct(g.gstCoveragePct, 0)})}</span></>}</>} open={<Open go={go} page="Inventory" label={t('Open Reports')} />} />
-  </div>;
+export function DeadStock({d}: {d: AdminInsights}) {
+  const {t, s} = useI(); const st = d.stock, valued = st.dead.some(x => x.valuePaise != null);
+  return <Card title={s('Dead stock ({n})', {n: st.dead.length})} hint={st.deadValuePaise != null && st.dead.length > 0 ? `${short(st.deadValuePaise)} ${t('locked in stock')}` : undefined}>
+    {st.dead.length ? <RankBars ariaLabel={t('Dead stock')} items={st.dead.slice(0, 5).map(x => ({key: x.id, label: x.name, value: valued ? x.valuePaise || 0 : x.stock, show: valued ? (x.valuePaise == null ? t('no cost') : short(x.valuePaise)) : `${count(x.stock)} ${t('pcs')}`, color: 'var(--s-other)', sub: x.lastSale ? s('{n} pcs · last sold {date}', {n: x.stock, date: bucketLabel(x.lastSale, 'day')}) : s('{n} pcs · never sold', {n: x.stock})}))} /> : <Compact>{s('Everything in stock sold in the last {n} days.', {n: st.deadDays})}</Compact>}
+    {st.deadUncosted > 0 && <p className="zl-note">{s('{n} of these have no cost price, so the locked value is understated.', {n: st.deadUncosted})}</p>}
+  </Card>;
+}
+export function FastMovers({d}: {d: AdminInsights}) {
+  const {t, s} = useI(); const st = d.stock;
+  return <Card title={t('Fast movers')} hint={t('Pieces sold in this period')}>
+    {st.fast.length ? <RankBars ariaLabel={t('Fast movers')} items={st.fast.slice(0, 5).map(x => ({key: x.id, label: x.name, value: x.pieces, show: `${count(x.pieces)} ${t('pcs')}`, color: 'var(--green)', sub: s('{n} sold · {a} left', {n: x.pieces, a: x.available ?? '—'})}))} /> : <Compact>{t('No sales in this period.')}</Compact>}
+  </Card>;
 }
 
 // ---------------- things to do + checklist ----------------
 const ONE: Partial<Record<string, string>> = {callOverdue: 'Call the dealer whose dues are over 30 days ({amount})', addCost: 'Add cost price to 1 design so profit is exact', verifyPayments: 'Verify 1 collection waiting for approval ({amount})', restock: '1 design is at or below reorder level — plan production or purchase', addGst: 'Set the GST rate on 1 design so GST is exact'};
-const GO_LABEL: Record<string, string> ={Orders: 'Open Bills', Products: 'Open Products', Customers: 'Open Dealers', Inventory: 'Open Inventory', Performance: 'Open Performance', Targets: 'Open Targets'};
+const GO_LABEL: Record<string, string> = {Orders: 'Open Orders', Bills: 'Open Bills', Products: 'Open Products', Customers: 'Open Dealers', Inventory: 'Open Inventory', Performance: 'Open Performance', Targets: 'Open Targets'};
 export function Todo({d, go}: P) {
   const {t, s} = useI();
   const text = (a: AdminInsights['actions'][number]) => {
-    const v = {...a.vars, amount: typeof a.vars.amount === 'number' ? money(a.vars.amount) : ''};
+    const v = {...a.vars, amount: typeof a.vars.amount === 'number' ? short(a.vars.amount) : ''};
     if (a.vars.n === 1 && ONE[a.kind]) return s(ONE[a.kind]!, v);
     return s({callOverdue: 'Call the {n} dealers whose dues are over 30 days ({amount})', addCost: 'Add cost price to {n} designs so profit is exact', followUp: '{name} hasn’t ordered in {days} days — send a follow-up', verifyPayments: 'Verify {n} collections waiting for approval ({amount})', restock: '{n} designs are at or below reorder level — plan production or purchase', addGst: 'Set the GST rate on {n} designs so GST is exact', coach: '{name} is at {pct}% of target — check in with them'}[a.kind], v);
   };
-  return <Card title={t('3 things to do this week')} className="ins-todo">
-    {d.actions.length ? <ol className="ins-actions">{d.actions.map((a, i) => <li key={a.kind}><span className="n" aria-hidden="true">{i + 1}</span><span className="tx">{text(a)}</span><Open go={go} page={a.go} label={t(GO_LABEL[a.go] || 'Open')} /></li>)}</ol>
+  return <Card title={t('Things to do this week')} className="ins-todo">
+    {d.actions.length ? <ol className="ins-actions">{d.actions.map((a, i) => <li key={a.kind}><button type="button" onClick={() => go(a.go)}><span className="n" aria-hidden="true">{i + 1}</span><span className="tx">{text(a)}<small>{t(GO_LABEL[a.go] || 'Open')}</small></span><ArrowRight size={15} aria-hidden="true" /></button></li>)}</ol>
       : <Compact>{t('Nothing urgent — dues, stock and data all look fine for now.')}</Compact>}
   </Card>;
 }

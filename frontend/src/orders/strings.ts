@@ -1,6 +1,7 @@
 // Bengali strings for the admin Orders page. Keys are the English text (same convention as i18n.tsx).
 // Hindi falls back to English.
 export const ordersBn: Record<string, string> = {
+  'Filters': 'ফিল্টার', 'Refresh': 'রিফ্রেশ', 'SALES': 'বিক্রয়',
   'Order': 'অর্ডার', 'Order no.': 'অর্ডার নং', 'orders': 'টি অর্ডার', 'Every order from placed to delivered: approve, dispatch, collect': 'অর্ডার দেওয়া থেকে পৌঁছানো পর্যন্ত সব অর্ডার: অনুমোদন, পাঠানো, আদায়',
   'Orders exported (CSV, opens in Excel)': 'অর্ডার এক্সপোর্ট হয়েছে (CSV, Excel-এ খোলে)',
   'orders placed worth': 'টি অর্ডার, মোট মূল্য', 'waiting for approval': 'টি অনুমোদনের অপেক্ষায়', 'delayed': 'দেরি', 'in progress': 'চলছে', 'delivered': 'পৌঁছেছে',

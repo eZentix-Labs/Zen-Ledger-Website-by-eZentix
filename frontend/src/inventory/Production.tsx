@@ -8,9 +8,8 @@ const ST_TONE: Record<string, any> = {DRAFT: 'grey', SUBMITTED: 'amber', APPROVE
 const stChip = (s: string) => <Chip tone={ST_TONE[s] || 'grey'}>{label(s)}</Chip>;
 const useProducts = () => useLoad(async () => (await get<any>('/api/inventory/products', {limit: 200})).items as any[], []);
 
-export function Production({initialSub}: {initialSub?: string}) {
-  const [sub, setSub] = useState(initialSub === 'bom' ? 'bom' : 'orders');
-  return <><div className="inv-subtabs"><Segment value={sub} onChange={setSub} options={[['orders', 'Production orders'], ['bom', 'BOM & costing']]} /></div>{sub === 'orders' ? <ProductionOrders /> : <Boms />}</>;
+export function Production({sub = 'orders'}: {sub?: string}) {
+  return sub === 'bom' ? <Boms /> : <ProductionOrders />;
 }
 
 // ---------------- BOM ----------------
@@ -100,8 +99,8 @@ function ProductionOrders() {
   return <Card title="Production orders" aside={can('production.manage') && <Button onClick={() => setForm(true)}>+ New production order</Button>}>
     <div className="inv-filters"><Select value={status} onChange={e => { setStatus(e.target.value); setPage(1); }} placeholder="All orders" options={[['OPEN', 'Open'], ...['DRAFT', 'SUBMITTED', 'APPROVED', 'MATERIALS_RESERVED', 'IN_PROGRESS', 'QUALITY_CHECK', 'COMPLETED', 'CANCELLED', 'REJECTED'].map(s => [s, label(s)] as [string, string])]} /></div>
     <ErrorBox error={list.error} retry={list.reload} />
-    {!list.data ? <Loading /> : <><Table headers={['', 'Order', 'Product', <span className="num">Planned</span>, <span className="num">Done</span>, 'Progress', 'Current stage', 'Expected', 'Assigned', 'Status', '']} empty="No production orders.">
-      {list.data.items.map((o: any) => <tr key={o._id}><td><Thumb url={o.image} alt={o.productName} /></td><td className="inv-mono">{o.number}</td><td><strong>{o.productName}</strong><small>BOM v{o.bomVersion}</small></td><td className="num">{o.plannedQty}</td><td className="num">{o.completedQty}{o.rejectedQty ? <small>{o.rejectedQty} rejected</small> : null}</td><td style={{minWidth: 110}}><Meter pct={o.progress.outputPct} /><small>{o.progress.outputPct}%</small></td><td>{o.progress.currentStage || '—'}</td><td>{day(o.expectedDate)}{o.progress.overdue && <Chip tone="red">Late</Chip>}</td><td>{o.assignedTo || '—'}</td><td>{stChip(o.status)}</td><td><Button small variant="ghost" onClick={() => setOpen(o._id)}>Open</Button></td></tr>)}
+    {!list.data ? <Loading /> : <><Table headers={['Order', 'Product', 'Progress', 'Current stage', 'Expected', 'Status', '']} empty="No production orders.">
+      {list.data.items.map((o: any) => <tr key={o._id}><td><span className="inv-mono">{o.number}</span><small>{o.assignedTo || 'Unassigned'}</small></td><td><div className="inv-name">{o.image && <Thumb url={o.image} alt={o.productName} size={34} />}<div><strong>{o.productName}</strong><small>BOM v{o.bomVersion}</small></div></div></td><td style={{minWidth: 130}}><Meter pct={o.progress.outputPct} /><small>{o.completedQty} of {o.plannedQty} done{o.rejectedQty ? ` · ${o.rejectedQty} rejected` : ''}</small></td><td>{o.progress.currentStage || '—'}</td><td className="inv-nowrap">{day(o.expectedDate)}{o.progress.overdue && <small><Chip tone="red">Late</Chip></small>}</td><td>{stChip(o.status)}</td><td><Button small variant="ghost" onClick={() => setOpen(o._id)}>Open</Button></td></tr>)}
     </Table><Pager page={page} total={list.data.total} limit={20} onPage={setPage} /></>}
     {form && <ProductionForm onClose={() => setForm(false)} onSaved={id => { setForm(false); void list.reload(); if (id) setOpen(id); }} />}
     {open && <ProductionDetail id={open} onClose={() => setOpen(null)} onChanged={() => void list.reload()} />}
