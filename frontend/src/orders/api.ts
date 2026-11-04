@@ -47,8 +47,8 @@ async function deskGet<T>(path: string, query?: Record<string, unknown>): Promis
 
 export const ordersApi = {
   list: (f: OrderFilters, page: number, limit: number, sort: string, dir: 'asc' | 'desc') => deskGet<OrderList>('/api/admin/orders', {...orderQuery(f), page, limit, sort, dir}),
-  /** Same endpoint over the previous window; used only for "vs previous period" on the KPI cards. */
-  totals: (f: OrderFilters) => deskGet<OrderList>('/api/admin/orders', {...orderQuery(f), status: undefined, page: 1, limit: 1}).then(r => r.totals),
+  /** Same endpoint and same filters (status included) over the previous window, so "vs previous period" compares like with like. */
+  totals: (f: OrderFilters) => deskGet<OrderList>('/api/admin/orders', {...orderQuery(f), page: 1, limit: 1}).then(r => r.totals),
   detail: (id: string) => get<OrderDetail>(`/api/admin/orders/${id}`),
   exportCsv: (f: OrderFilters, sort: string, dir: string) => downloadCsv('/api/admin/orders', {...orderQuery(f), sort, dir}),
   setStatus: (id: string, status: OrderStatus, reason?: string) => send('PATCH', `/api/orders/${id}/status`, reason ? {status, reason} : {status}),

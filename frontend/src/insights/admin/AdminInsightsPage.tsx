@@ -1,11 +1,11 @@
-// Admin Insights: whole-business health (owner / accounts). Data: GET /api/admin/insights.
+// Admin Insights: whole-business health as graphs (owner / accounts). Data: GET /api/admin/insights.
 import {useCallback, useState} from 'react';
-import {FileSpreadsheet, Printer} from 'lucide-react';
+import {CalendarDays, FileSpreadsheet, Printer, RefreshCw} from 'lucide-react';
 import {downloadCsv, get} from '../../inventory/api';
-import {Chip, ErrorState, KpiSkeletons, PageHeader, PeriodSwitcher, Segmented, Skeleton, ToastHost, pct, useApi, usePeriod, useToast} from '../../admin/ui';
+import {Chip, ErrorState, PageHeader, PeriodSwitcher, Segmented, Skeleton, StatSkeletons, ToastHost, day, pct, useApi, usePeriod, useToast} from '../../admin/ui';
 import {useI} from '../useI';
 import type {AdminInsights, Page} from './types';
-import {Ageing, Checklist, DesignQuadrant, Dealers, Footnote, Kpis, Ladder, Leaderboard, MiniCards, MoneyOut, Rupee, Stock, Summary, Todo, TopLists, Trend} from './sections';
+import {Ageing, BillsChart, Checklist, DeadStock, DealerShare, DesignQuadrant, FastMovers, Footnote, Gst, IdleDealers, Kpis, Ladder, Leaderboard, LowStock, MoneyOut, OldestDues, Open, PayModes, ProfitTrend, Rupee, Section, Summary, TeamTarget, Todo, TopDealers, TopLists, Trend} from './sections';
 import '../../admin/theme.css';
 import './insights.css';
 
@@ -30,7 +30,6 @@ function Body({go}: {go: (p: Page) => void}) {
   }, [q.from, q.to, idleDays]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const periodName = {today: t('Today'), week: t('This week'), month: t('This month'), year: t('This financial year'), custom: t('In this period')}[period.key];
-  const dateText = new Date().toLocaleDateString('en-IN', {weekday: 'long', day: 'numeric', month: 'long', year: 'numeric'});
 
   // Cards whose data does not exist yet. 3 or more → fold them into the one checklist card.
   const empties: Array<[string, string]> = d ? [
@@ -42,42 +41,60 @@ function Body({go}: {go: (p: Page) => void}) {
   const fold = empties.length >= 3, hide = (k: string) => fold && empties.some(e => e[0] === k);
   const full = mode === 'full';
 
-  return <div className="zl ins-page">
-    <PageHeader title={t('Insights')} subtitle={`${t('How the business is really doing')} · ${dateText}`} actions={<>
-      <PeriodSwitcher value={period} onChange={setPeriod} />
-      <Segmented value={mode} onChange={setMode} options={[['simple', t('Simple')], ['full', t('Full')]]} label={t('Detail level')} />
-      <span className="zl-actions" role="group" aria-label={t('Export for accountant')}>
-        <button type="button" className="zl-btn" onClick={exportCsv} disabled={busy || !d}><FileSpreadsheet size={16} aria-hidden="true" />{t('Excel')}</button>
-        <button type="button" className="zl-btn" onClick={() => window.print()} disabled={!d}><Printer size={16} aria-hidden="true" />{t('PDF')}</button>
+  return <div className="zl zl-shell ins-page">
+    <PageHeader eyebrow={t('FINANCE')} title={t('Insights')} subtitle={t('How the business is really doing')} actions={<PeriodSwitcher value={period} onChange={setPeriod} />} />
+    <div className="zl-metabar">
+      <span className="zl-metabar-range"><CalendarDays size={14} aria-hidden="true" /> {t('Showing')} {day(period.from)} – {day(period.to)}{d?.canSeeCost && d.completeness.costPct != null && <Chip tone={d.completeness.costPct >= 95 ? 'green' : 'amber'}>{s('Cost known for {pct} of sales', {pct: pct(d.completeness.costPct, 0)})}</Chip>}</span>
+      <span className="zl-metabar-right">
+        <Segmented value={mode} onChange={setMode} options={[['simple', t('Simple')], ['full', t('Full')]]} label={t('Detail level')} />
+        <button type="button" className="zl-btn sm" onClick={exportCsv} disabled={busy || !d}><FileSpreadsheet size={14} aria-hidden="true" />{t('Excel')}</button>
+        <button type="button" className="zl-btn sm" onClick={() => window.print()} disabled={!d}><Printer size={14} aria-hidden="true" />{t('PDF')}</button>
+        <button type="button" className="zl-btn sm" aria-label={t('Refresh')} aria-busy={loading} onClick={() => void reload()}><RefreshCw size={14} className={loading ? 'zl-spin' : undefined} aria-hidden="true" /><span className="ins-btn-t">{t('Refresh')}</span></button>
       </span>
-      {d?.canSeeCost && d.completeness.costPct != null && <Chip tone={d.completeness.costPct >= 95 ? 'green' : 'amber'}>{s('Cost known for {pct} of sales', {pct: pct(d.completeness.costPct, 0)})}</Chip>}
-    </>} />
+    </div>
 
     {!valid ? <ErrorState error={t('Choose a start date on or before the end date.')} />
       : error ? <ErrorState error={error} retry={() => void reload()} />
-      : loading && !d ? <><Skeleton h={78} r={16} /><div style={{height: 16}} /><KpiSkeletons n={7} /><div className="zl-grid zl-g2"><Skeleton h={320} r={16} /><Skeleton h={320} r={16} /></div></>
+      : loading && !d ? <div aria-busy="true"><StatSkeletons /><div className="ins-hero"><Skeleton h={440} r={16} /><Skeleton h={440} r={16} /></div><div className="ins-g3"><Skeleton h={300} r={16} /><Skeleton h={300} r={16} /><Skeleton h={300} r={16} /></div></div>
       : d && <div aria-busy={loading || undefined} className={loading ? 'ins-reloading' : ''}>
-        <Summary d={d} periodName={periodName} />
         <Kpis d={d} go={go} />
         <Footnote d={d} />
-        {!full && <div className="zl-grid zl-g2"><div style={{gridColumn: '1 / -1'}}><Trend d={d} /></div></div>}
-        <div className="zl-grid zl-g2">
-          <Ladder d={d} go={go} />
-          {full ? (hide('money') ? null : <MoneyOut d={d} go={go} />) : <Todo d={d} go={go} />}
-        </div>
+        <div className="ins-hero"><Trend d={d} /><div className="ins-stack"><Summary d={d} periodName={periodName} /><Todo d={d} go={go} /></div></div>
+
+        {full && <Section title={t('Cash')} hint={t('Where the bills of this period stand')} action={<Open go={go} page="Bills" label={t('Open Bills')} />}>
+          <div className="ins-g3"><Rupee d={d} /><PayModes d={d} /><BillsChart d={d} /></div>
+        </Section>}
+
+        <Section title={t('Profit')} hint={t('What is left after the cost of goods')}>
+          <div className="ins-g2"><Ladder d={d} go={go} /><ProfitTrend d={d} /></div>
+          {full && <div className="ins-g2">{!hide('money') && <MoneyOut d={d} go={go} />}<Gst d={d} /></div>}
+        </Section>
+
         {full && <>
-          <div className="zl-grid zl-g2"><Rupee d={d} /><Trend d={d} /></div>
-          <div className="zl-grid zl-g2">{!hide('quadrant') && <DesignQuadrant d={d} go={go} />}<TopLists d={d} /></div>
-          <div className="zl-grid zl-g2">{!hide('people') && <Leaderboard d={d} go={go} />}<Dealers d={d} go={go} idleDays={idleDays} setIdleDays={setIdleDays} /></div>
-          <div className="zl-grid zl-g2"><Ageing d={d} go={go} />{!hide('stock') && <Stock d={d} go={go} />}</div>
-          <MiniCards d={d} go={go} />
-          <div className="zl-grid zl-g2"><Todo d={d} go={go} />{(fold || d.completeness.checklist.some(x => !x.done && x.available)) && <Checklist d={d} go={go} hidden={fold ? empties.map(e => e[1]) : []} />}</div>
+          <Section title={t('Designs')} hint={t('Which products earn, and which only sell')} action={<Open go={go} page="Products" label={t('Open Products')} />}>
+            <div className="ins-g2">{!hide('quadrant') && <DesignQuadrant d={d} go={go} />}<TopLists d={d} /></div>
+          </Section>
+          <Section title={t('Dealers')} hint={t('Who buys, and who has gone quiet')} action={<Open go={go} page="Customers" label={t('Open Dealers')} />}>
+            <div className="ins-g3"><DealerShare d={d} /><TopDealers d={d} /><IdleDealers d={d} idleDays={idleDays} setIdleDays={setIdleDays} /></div>
+          </Section>
+          <Section title={t('Sales team')} hint={t('Billing, collection and targets')} action={<Open go={go} page="Performance" label={t('Open Performance')} />}>
+            <div className="ins-hero">{!hide('people') && <Leaderboard d={d} go={go} />}<TeamTarget d={d} go={go} /></div>
+          </Section>
+          <Section title={t('Money to collect')} hint={t('How old the unpaid bills are')} action={<Open go={go} page="Bills" label={t('Open Bills')} />}>
+            <div className="ins-g2"><Ageing d={d} /><OldestDues d={d} /></div>
+          </Section>
+          {!hide('stock') && <Section title={t('Stock health')} hint={t('What to reorder, and what is stuck')} action={<Open go={go} page="Inventory" label={t('Open Inventory')} />}>
+            <div className="ins-g3"><LowStock d={d} /><DeadStock d={d} /><FastMovers d={d} /></div>
+          </Section>}
+          {(fold || d.completeness.checklist.some(x => !x.done && x.available)) && <div className="ins-sec"><Checklist d={d} go={go} hidden={fold ? empties.map(e => e[1]) : []} /></div>}
         </>}
-        <p className="ins-foot">{s('Compared with {from} – {to}.', {from: d.previous.from, to: d.previous.to})} {t(d.policy === 'DISPATCHED' ? 'A bill counts as a sale once it is dispatched.' : 'A bill counts as a sale once it is approved.')} {t('Prices include GST; GST and net sales are estimates from each design’s GST rate.')}</p>
+        <p className="ins-foot ins-end">{s('Compared with {from} – {to}.', {from: day(d.previous.from), to: day(d.previous.to)})} {t(d.policy === 'DISPATCHED' ? 'A bill counts as a sale once it is dispatched.' : 'A bill counts as a sale once it is approved.')} {t('Prices include GST; GST and net sales are estimates from each design’s GST rate.')}</p>
       </div>}
   </div>;
 }
 
 export default function AdminInsightsPage({go}: {go: (p: Page) => void}) {
-  return <ToastHost><Body go={go} /></ToastHost>;
+  // The app's page key for dealers is Distributors; the API's action links say Customers.
+  const open = useCallback((p: Page) => go(p === 'Customers' ? 'Distributors' : p), [go]);
+  return <ToastHost><Body go={open} /></ToastHost>;
 }

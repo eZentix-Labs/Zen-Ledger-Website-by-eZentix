@@ -9,10 +9,10 @@ import {Sparkline} from './charts';
 // ---------------- formatting (one formatter for every number on these pages) ----------------
 export const inr = (paise: number | null | undefined, compact = false) => {
   if (paise == null) return '—';
-  const r = paise / 100;
-  if (compact && Math.abs(r) >= 1e7) return `₹${(r / 1e7).toLocaleString('en-IN', {maximumFractionDigits: 2})} Cr`;
-  if (compact && Math.abs(r) >= 1e5) return `₹${(r / 1e5).toLocaleString('en-IN', {maximumFractionDigits: 2})} L`;
-  return `₹${r.toLocaleString('en-IN', {maximumFractionDigits: Math.abs(r) < 1000 && r % 1 ? 2 : 0})}`;
+  const r = Math.abs(paise) / 100, sign = paise < 0 ? '-' : '';
+  if (compact && r >= 1e7) return `${sign}₹${(r / 1e7).toLocaleString('en-IN', {maximumFractionDigits: 2})} Cr`;
+  if (compact && r >= 1e5) return `${sign}₹${(r / 1e5).toLocaleString('en-IN', {maximumFractionDigits: 2})} L`;
+  return `${sign}₹${r.toLocaleString('en-IN', {maximumFractionDigits: r < 1000 && r % 1 ? 2 : 0})}`;
 };
 export const count = (n: number | null | undefined) => n == null ? '—' : n.toLocaleString('en-IN');
 export const pct = (n: number | null | undefined, digits = 1) => n == null ? '—' : `${n.toLocaleString('en-IN', {maximumFractionDigits: digits})}%`;
@@ -84,6 +84,17 @@ export function KpiCard({label, value, delta, invert, deltaSuffix, spark, icon, 
   </>;
   return onClick ? <button type="button" className="zl-kpi" aria-pressed={pressed} onClick={onClick}>{body}</button> : <div className="zl-kpi">{body}</div>;
 }
+/** The stat card used by page headers: Overview and Orders. Layout and tiers are in theme.css (.zl-stats, .zl-stat). */
+export function StatCard({label, value, exact, delta, deltaSuffix = 'vs previous period', invert, spark, icon, tone = 'violet', hint, onClick, pressed}: {label: string; value: string; exact?: string; delta?: number | null; deltaSuffix?: string; invert?: boolean; spark?: number[]; icon: React.ReactNode; tone?: 'violet' | 'amber' | 'red' | 'blue'; hint?: React.ReactNode; onClick?: () => void; pressed?: boolean}) {
+  const body = <>
+    <span className="zl-stat-top"><span className={`zl-tile ${tone}`} aria-hidden="true">{icon}</span><span className="zl-stat-label">{label}</span></span>
+    <span className="zl-stat-mid"><span className="zl-stat-value">{value}</span>{spark && spark.length > 1 && spark.some(v => v > 0) && <span className="zl-stat-spark"><Sparkline data={spark} label={label} /></span>}</span>
+    {delta !== undefined && <Delta value={delta} invert={invert} suffix={deltaSuffix} />}
+    {hint && <small>{hint}</small>}
+  </>;
+  return onClick ? <button type="button" className="zl-stat" aria-pressed={pressed} onClick={onClick} title={exact}>{body}</button> : <div className="zl-stat" title={exact}>{body}</div>;
+}
+export function StatSkeletons({n = 5}: {n?: number}) { return <div className="zl-stats" aria-busy="true">{Array.from({length: n}, (_, i) => <div className="zl-stat" key={i}><Skeleton h={32} w="62%" r={10} /><Skeleton h={28} w="70%" /><Skeleton h={12} w="88%" /></div>)}</div>; }
 export function Skeleton({h = 16, w = '100%', r}: {h?: number; w?: number | string; r?: number}) { return <span className="zl-skel" aria-hidden="true" style={{display: 'block', height: h, width: w, borderRadius: r}} />; }
 export function KpiSkeletons({n = 6}: {n?: number}) { return <div className="zl-kpis" aria-busy="true">{Array.from({length: n}, (_, i) => <div className="zl-kpi" key={i}><Skeleton h={12} w="50%" /><Skeleton h={26} w="70%" /><Skeleton h={14} w="40%" /></div>)}</div>; }
 export function EmptyState({icon, children, action}: {icon?: React.ReactNode; children: React.ReactNode; action?: React.ReactNode}) { return <div className="zl-empty">{icon || <Inbox size={26} aria-hidden="true" />}<div>{children}</div>{action}</div>; }

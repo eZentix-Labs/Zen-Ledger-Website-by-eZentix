@@ -1,9 +1,10 @@
-import React from 'react';
-import {AlertTriangle, ArrowRight, Boxes, ClipboardCheck, Factory, IndianRupee, Package, RefreshCw, ShoppingCart, Users} from 'lucide-react';
+import React, {useState} from 'react';
+import {AlertTriangle, ArrowRight, Boxes, CalendarDays, CheckCircle2, ClipboardCheck, Factory, IndianRupee, Lock, Package, RefreshCw, ShoppingCart, Users} from 'lucide-react';
 import {get} from '../inventory/api';
 import {TrendChart} from './charts';
-import {ChartCard, Chip, EmptyState, ErrorState, inr, KpiCard, KpiSkeletons, PageHeader, PeriodSwitcher, Skeleton, useApi, usePeriod} from './ui';
+import {Chip, Delta, EmptyState, ErrorState, inr, PageHeader, PeriodSwitcher, Segmented, Skeleton, StatCard, StatSkeletons, useApi, usePeriod} from './ui';
 import './theme.css';
+import './overview.css';
 
 type Overview = {
   from: string; to: string; generatedAt: string; keys: string[]; bucket: 'hour'|'day'|'month'; access:{valuation:boolean};
@@ -23,87 +24,233 @@ type Overview = {
   salesmenPerformance:Array<{id:string;name:string;salesPaise:number;targetPaise:number|null;targetPct:number|null}>;
   alerts:{delayed:Array<{id:string;number:string;customerName:string;status:string;ageHours:number}>;oldDues:Array<{id:string;number:string;customerName:string;duePaise:number;days:number}>;unverifiedPayments:number};
 };
-const emit=(name:string)=>window.dispatchEvent(new Event(`bms:${name}`));
-const money=(n:number|null|undefined)=>inr(n,true);
-const day=(d:string)=>new Date(`${d}T00:00:00`).toLocaleDateString('en-IN',{day:'2-digit',month:'2-digit',year:'numeric'});
-const labelKey=(key:string,bucket:Overview['bucket'])=>bucket==='hour'?`${key}:00`:bucket==='month'?new Date(`${key}-01T00:00:00`).toLocaleDateString('en-IN',{month:'short',year:'2-digit'}):new Date(`${key}T00:00:00`).toLocaleDateString('en-IN',{day:'2-digit',month:'short'});
+type RankRow = {id:string; name:string; value:string; exact?:string; sub:string; bar:number|null; done?:boolean};
+
+const emit = (name:string) => window.dispatchEvent(new Event(`bms:${name}`));
+const money = (n:number|null|undefined) => inr(n, true);
+const num = (n:number) => n.toLocaleString('en-IN');
+const day = (d:string) => new Date(`${d}T00:00:00`).toLocaleDateString('en-IN', {day:'2-digit', month:'2-digit', year:'numeric'});
+const labelKey = (key:string, bucket:Overview['bucket']) => bucket === 'hour' ? `${key}:00` : bucket === 'month' ? new Date(`${key}-01T00:00:00`).toLocaleDateString('en-IN', {month:'short', year:'2-digit'}) : new Date(`${key}T00:00:00`).toLocaleDateString('en-IN', {day:'2-digit', month:'short'});
+const NO_ACCESS = 'Not available for your role';
+/** A gated figure as plain text, for inline notes. Never shows a missing value as zero. */
+const gatedText = (locked:boolean, value:number|null|undefined, format:(n:number)=>string) => locked ? NO_ACCESS : value == null ? 'Not recorded' : format(value);
 
 export default function OverviewPage({go}:{go:(page:string)=>void}) {
-  const [period,setPeriod]=usePeriod('admin-overview-period','month');
-  const api=useApi(()=>get<Overview>('/api/admin/overview',{from:period.from,to:period.to}),[period.from,period.to]);
-  const d=api.data;
-  const openOrders=()=>{const q=new URLSearchParams({period:'custom',from:period.from,to:period.to});window.history.replaceState(window.history.state,'',`${window.location.pathname}?${q.toString()}`);go('Orders');};
-  const retry=()=>void api.reload();
-  const attention=d?[
-    ...(d.alerts.delayed||[]).map(x=>({key:`delay-${x.id}`,title:`Order ${x.number} is delayed`,detail:`${x.customerName} · ${x.status} · ${Math.floor(x.ageHours/24)} days`,go:'Orders',icon:<AlertTriangle size={17}/>,tone:'red'})),
-    ...(d.alerts.oldDues||[]).map(x=>({key:`due-${x.id}`,title:`${x.customerName} has an overdue balance`,detail:`Order ${x.number} · ${money(x.duePaise)} · ${x.days} days`,go:'Orders',icon:<IndianRupee size={17}/>,tone:'amber'})),
-    ...(d.stock.alerts||[]).slice(0,4).map(x=>({key:`stock-${x.id}`,title:`Reorder ${x.name}`,detail:`${x.available.toLocaleString('en-IN')} ${x.unit} available · reorder at ${x.reorder.toLocaleString('en-IN')}`,go:'Inventory',icon:<Boxes size={17}/>,tone:'amber'})),
-    ...(d.production.lateOrders||[]).map(x=>({key:`production-${x.id}`,title:`Production ${x.number} is overdue`,detail:`${x.productName} · due ${day(x.expectedDate.slice(0,10))}`,go:'Inventory',icon:<Factory size={17}/>,tone:'red'})),
-    ...(d.alerts.unverifiedPayments?[{key:'unverified',title:`${d.alerts.unverifiedPayments} payment${d.alerts.unverifiedPayments===1?'':'s'} need verification`,detail:'Verify received payments before they count in collections.',go:'Orders',icon:<ClipboardCheck size={17}/>,tone:'blue'}]:[]),
-  ].slice(0,8):[];
+  const [period, setPeriod] = usePeriod('admin-overview-period', 'month');
+  const api = useApi(() => get<Overview>('/api/admin/overview', {from:period.from, to:period.to}), [period.from, period.to]);
+  const d = api.data;
+  const openOrders = () => { const q = new URLSearchParams({period:'custom', from:period.from, to:period.to}); window.history.replaceState(window.history.state, '', `${window.location.pathname}?${q.toString()}`); go('Orders'); };
+  const retry = () => void api.reload();
 
-  return <div className="zl zl-page zl-overview">
-    <PageHeader eyebrow="BUSINESS AT A GLANCE" title="Overview" subtitle="Sales, cash collection, stock and actions for your business." actions={<><PeriodSwitcher value={period} onChange={setPeriod}/><button className="zl-btn" type="button" onClick={retry} aria-label="Refresh overview" aria-busy={api.loading}><RefreshCw size={15}/> {api.loading?'Updating…':'Refresh'}</button></>}/>
-    <div className="zl-overview-meta"><span>Showing {day(period.from)} – {day(period.to)}</span>{d&&<span>Updated {new Date(d.generatedAt).toLocaleTimeString('en-IN',{hour:'2-digit',minute:'2-digit'})}</span>}</div>
-    {api.error&&<ErrorState error={`${d?'Showing the last successful data. ':'Overview could not be loaded. '}${api.error}`} retry={retry}/>}
-    {!d&&api.loading&&<>
-      <KpiSkeletons n={5}/>
-      <section className="zl-card zl-attention" aria-label="Loading items needing attention" aria-busy="true"><div className="zl-card-h"><div><Skeleton h={16} w={170}/><Skeleton h={12} w={240}/></div></div>{[0,1,2].map(i=><div className="zl-attention-loading-row" key={i}><Skeleton h={34} w={34} r={10}/><div style={{flex:1,display:'grid',gap:7}}><Skeleton h={12} w="48%"/><Skeleton h={10} w="68%"/></div></div>)}</section>
-      <div className="zl-grid zl-g2"><ChartCard title="Sales trend" loading/><ChartCard title="Collections trend" loading/></div>
-      <OverviewCardSkeleton rows={3}/>
-      <div className="zl-grid zl-g2"><OverviewCardSkeleton rows={4}/><OverviewCardSkeleton rows={3}/></div>
-      <div className="zl-grid zl-g3"><OverviewCardSkeleton rows={4}/><OverviewCardSkeleton rows={4}/><OverviewCardSkeleton rows={3}/></div>
-      <div className="zl-grid zl-g2"><OverviewCardSkeleton rows={4}/><OverviewCardSkeleton rows={3}/></div>
-    </>}
-    {!d&&!api.loading&&!api.error&&<EmptyState icon={<ShoppingCart/>}>No overview data is available for this period.</EmptyState>}
-    {d&&<>
-      <section aria-label="Key business figures" className="zl-kpis zl-overview-kpis">
-        <KpiCard label="Sales" value={money(d.kpi.salesPaise)} delta={d.deltas.salesPaise} deltaSuffix="vs previous period" icon={<IndianRupee size={16}/>} hint={`${d.kpi.countedOrders.toLocaleString('en-IN')} confirmed orders`} onClick={openOrders} />
-        <KpiCard label="Collections received" value={money(d.kpi.collectedPaise)} delta={d.deltas.collectedPaise} deltaSuffix="vs previous period" icon={<ClipboardCheck size={16}/>} hint="Verified payments in this period" onClick={openOrders} />
-        <KpiCard label="Receivables outstanding" value={money(d.finance.duePaise)} icon={<IndianRupee size={16}/>} hint={`${d.finance.dueOrders.toLocaleString('en-IN')} confirmed orders · see ageing below`} onClick={openOrders} />
-        <KpiCard label="Orders needing action" value={(d.operations.pending+d.operations.readyToDispatch+d.operations.dispatched).toLocaleString('en-IN')} icon={<ShoppingCart size={16}/>} hint={`${d.operations.pending} pending · ${d.operations.readyToDispatch} ready · ${d.operations.dispatched} awaiting delivery`} onClick={openOrders} />
-        <KpiCard label="Stock alerts" value={d.operations.lowStock.toLocaleString('en-IN')} icon={<Package size={16}/>} hint={`${d.operations.outOfStock} out of stock · included in reorder alerts`} onClick={()=>go('Inventory')} />
+  return <div className="zl zl-shell zl-overview">
+    <PageHeader eyebrow="BUSINESS AT A GLANCE" title="Overview" subtitle="Sales, cash collection, stock and actions for your business." actions={<PeriodSwitcher value={period} onChange={setPeriod}/>}/>
+    <div className="zl-metabar">
+      <span className="zl-metabar-range"><CalendarDays size={14} aria-hidden="true"/> Showing {day(period.from)} – {day(period.to)}</span>
+      <span className="zl-metabar-right">
+        {d && <span aria-live="polite">Updated {new Date(d.generatedAt).toLocaleTimeString('en-IN', {hour:'2-digit', minute:'2-digit'})}</span>}
+        <button className="zl-btn sm" type="button" onClick={retry} aria-label="Refresh overview" aria-busy={api.loading}><RefreshCw size={14} className={api.loading ? 'zl-spin' : undefined} aria-hidden="true"/> {api.loading ? 'Updating…' : 'Refresh'}</button>
+      </span>
+    </div>
+    {api.error && <ErrorState error={`${d ? 'Showing the last successful data. ' : 'Overview could not be loaded. '}${api.error}`} retry={retry}/>}
+    {!d && api.loading && <OverviewSkeleton/>}
+    {!d && !api.loading && !api.error && <EmptyState icon={<ShoppingCart/>}>No overview data is available for this period.</EmptyState>}
+    {d && <div className="ov-body" aria-busy={api.loading || undefined}>
+      <section aria-label="Key business figures" className="zl-stats">
+        <StatCard label="Sales" value={money(d.kpi.salesPaise)} exact={inr(d.kpi.salesPaise)} delta={d.deltas.salesPaise} spark={d.series.sales} icon={<IndianRupee size={16}/>} hint={`${num(d.kpi.countedOrders)} confirmed orders`} onClick={openOrders}/>
+        <StatCard label="Collections received" value={money(d.kpi.collectedPaise)} exact={inr(d.kpi.collectedPaise)} delta={d.deltas.collectedPaise} spark={d.series.collected} icon={<ClipboardCheck size={16}/>} hint="Verified payments in this period" onClick={openOrders}/>
+        <StatCard label="Receivables outstanding" value={money(d.finance.duePaise)} exact={inr(d.finance.duePaise)} icon={<IndianRupee size={16}/>} hint={`${num(d.finance.dueOrders)} confirmed orders · see receivable age`} onClick={openOrders}/>
+        <StatCard label="Orders needing action" value={num(d.operations.pending + d.operations.readyToDispatch + d.operations.dispatched)} tone={d.operations.delayed ? 'amber' : 'violet'} icon={<ShoppingCart size={16}/>} hint={`${d.operations.pending} pending · ${d.operations.readyToDispatch} ready · ${d.operations.dispatched} awaiting delivery`} onClick={openOrders}/>
+        <StatCard label="Stock alerts" value={num(d.operations.lowStock)} tone={d.operations.outOfStock ? 'red' : d.operations.lowStock ? 'amber' : 'violet'} icon={<Package size={16}/>} hint={`${d.operations.outOfStock} out of stock · included in reorder alerts`} onClick={() => go('Inventory')}/>
       </section>
-      <section className="zl-card zl-attention" aria-labelledby="attention-title">
-        <div className="zl-card-h"><div><h2 id="attention-title">Needs attention</h2><p>Prioritised items that may need action today.</p></div><Chip tone={attention.length?'amber':'green'} dot>{attention.length?`${attention.length} items`:'All clear'}</Chip></div>
-        {attention.length?<ul className="zl-attention-list">{attention.map(a=><li key={a.key}><span className={`zl-attention-icon ${a.tone}`} aria-hidden="true">{a.icon}</span><span className="zl-attention-copy"><b>{a.title}</b><small>{a.detail}</small></span><button className="zl-iconbtn" type="button" aria-label={`Open ${a.go} for ${a.title}`} onClick={()=>a.go==='Orders'?openOrders():go(a.go)}><ArrowRight size={17}/></button></li>)}</ul>:<div className="zl-overview-empty">No urgent actions found for the selected period.</div>}
-        {(d.operations.delayed>5||d.operations.lowStock>8)&&<button className="zl-btn sm" type="button" onClick={()=>d.operations.delayed>5?openOrders():go('Inventory')}>View all actions <ArrowRight size={14}/></button>}
-      </section>
-      <div className="zl-grid zl-g2 zl-overview-trends">
-        <ChartCard title="Sales trend" hint="Confirmed sales compared with the previous period." loading={api.loading} empty={d.series.sales.every(v=>v===0)&&d.previousSeries.sales.every(v=>v===0)?'No sales recorded in this or the previous period.':false}>
-          <TrendChart labels={d.keys.map(k=>labelKey(k,d.bucket))} current={d.series.sales} previous={d.previousSeries.sales} format={money} ariaLabel="Sales trend, current period and previous period" curName="Selected period" prevName="Previous period"/>
-        </ChartCard>
-        <ChartCard title="Collections trend" hint="Verified payments by date, compared with the previous period." loading={api.loading} empty={d.series.collected.every(v=>v===0)&&d.previousSeries.collected.every(v=>v===0)?'No verified collections recorded in either period.':false}>
-          <TrendChart labels={d.keys.map(k=>labelKey(k,d.bucket))} current={d.series.collected} previous={d.previousSeries.collected} format={money} ariaLabel="Collections trend, current period and previous period" curName="Selected period" prevName="Previous period"/>
-        </ChartCard>
+
+      <div className="ov-main">
+        <Attention d={d} go={go} openOrders={openOrders}/>
+        <div className="ov-stack">
+          <TrendCard d={d}/>
+          <AgeingCard d={d} openOrders={openOrders}/>
+        </div>
       </div>
-      <section className="zl-card"><div className="zl-card-h"><div><h2>Receivable age</h2><p>Days since each order was confirmed, not days overdue by payment terms; balances without a confirmation date are excluded.</p></div></div>
-        <div className="zl-ageing-grid">{d.finance.ageing.map(x=><button className="zl-ageing" type="button" key={x.bucket} onClick={openOrders}><span>{x.bucket} days</span><b>{money(x.duePaise)}</b><small>{x.bills.toLocaleString('en-IN')} orders</small></button>)}</div>
-      </section>
-      <div className="zl-grid zl-g2">
-        <section className="zl-card"><div className="zl-card-h"><div><h2>Stock & production</h2><p>Available inventory and active manufacturing work.</p></div></div>
-          <dl className="zl-overview-stats"><div><dt>Known-cost stock subtotal</dt><dd>{!d.access.valuation?'Not available for your role':d.stock.stockValuePaise==null?'Not recorded':money(d.stock.stockValuePaise)}</dd></div><div><dt>Uncosted stock records</dt><dd>{!d.access.valuation?'Not available for your role':d.stock.uncostedStockItems==null?'Not recorded':d.stock.uncostedStockItems.toLocaleString('en-IN')}</dd></div><div><dt>Orders in production</dt><dd>{d.production.active.toLocaleString('en-IN')}</dd></div><div><dt>Delayed production orders</dt><dd>{d.production.late.toLocaleString('en-IN')}</dd></div></dl>
-          <p className="zl-note">Known weighted-average cost subtotal; uncosted stock is excluded.</p><button className="zl-btn sm" type="button" onClick={()=>go('Inventory')}>Open inventory <ArrowRight size={14}/></button>
+
+      <div className="ov-health">
+        <StockCard d={d} go={go}/>
+        <ProfitCard d={d}/>
+        <PayablesCard d={d} go={go}/>
+      </div>
+
+      <div className="ov-ranks">
+        <Ranked title="Top products" hint="Confirmed sales value in this period." empty="No product sales recorded." rows={relative(d.topProducts.map(x => ({id:x.id, name:x.name, paise:x.valuePaise, sub:`${num(x.qty)} units`})))}/>
+        <Ranked title="Top distributors" hint="Confirmed sales value in this period." empty="No distributor sales recorded." rows={relative(d.topDistributors.map(x => ({id:x.id, name:x.name, paise:x.salesPaise, sub:`${num(x.orders)} orders`})))}/>
+        <Ranked title="Sales by salesman" hint="Bars show progress against each target." empty="No salesman sales recorded." rows={d.salesmenPerformance.map(x => ({id:x.id, name:x.name, value:money(x.salesPaise), exact:inr(x.salesPaise), sub:`Target ${x.targetPaise == null ? 'Not set' : money(x.targetPaise)}${x.targetPct == null ? '' : ` · ${x.targetPct.toLocaleString('en-IN')}% achieved`}`, bar:x.targetPct, done:(x.targetPct ?? 0) >= 100}))}/>
+      </div>
+
+      <div className="ov-bottom">
+        <section className="zl-card ov-card" aria-labelledby="ov-quality">
+          <CardHead id="ov-quality" title="Data quality" hint="Records that can make reports or fulfilment less reliable."/>
+          <ul className="ov-quality">
+            <QualityRow label="Active products missing a BOM" value={d.quality.productsMissingBom}/>
+            <QualityRow label="Negative finished stock" value={d.quality.negativeFinishedGoods}/>
+            <QualityRow label="Negative material stock" value={d.quality.negativeMaterials}/>
+          </ul>
         </section>
-        <section className="zl-card"><div className="zl-card-h"><div><h2>Estimated gross profit</h2><p>Net of configured GST on costed product lines. Excludes business expenses.</p></div><Chip tone="amber">Estimated</Chip></div>
-          <div className="zl-profit-value">{!d.access.valuation?'Not available for your role':d.profit?.grossProfitPaise==null?'Not recorded':money(d.profit.grossProfitPaise)}</div><p className="zl-note">Cost coverage: {!d.access.valuation?'Not available for your role':d.profit?.costCoveragePct==null?'Not recorded':`${d.profit.costCoveragePct.toLocaleString('en-IN')}%`} of selected-period sales. Expenses and salaries: Not recorded.</p>
-          {(d.quality.productsMissingCost||d.quality.productsMissingGst)&&<p className="zl-warn"><AlertTriangle size={15}/> {d.quality.productsMissingCost??'Not recorded'} products missing cost · {d.quality.productsMissingGst??'Not recorded'} missing GST rate</p>}
+        <section className="zl-card ov-card" aria-labelledby="ov-quick">
+          <CardHead id="ov-quick" title="Quick actions" hint="Start common work without leaving the overview."/>
+          <div className="ov-quick">
+            <button type="button" onClick={() => emit('open-invoice')}><span className="zl-tile violet" aria-hidden="true"><IndianRupee size={16}/></span>Create invoice<ArrowRight size={15} aria-hidden="true"/></button>
+            <button type="button" onClick={() => emit('open-product')}><span className="zl-tile violet" aria-hidden="true"><Package size={16}/></span>Add product<ArrowRight size={15} aria-hidden="true"/></button>
+            <button type="button" onClick={() => emit('open-customer')}><span className="zl-tile violet" aria-hidden="true"><Users size={16}/></span>Add distributor<ArrowRight size={15} aria-hidden="true"/></button>
+          </div>
         </section>
       </div>
-      <div className="zl-grid zl-g3">
-        <RankTable title="Top products" empty="No product sales recorded." rows={d.topProducts.map(x=>[x.name,`${money(x.valuePaise)} · ${x.qty.toLocaleString('en-IN')} units`])}/>
-        <RankTable title="Top distributors" empty="No distributor sales recorded." rows={d.topDistributors.map(x=>[x.name,`${money(x.salesPaise)} · ${x.orders.toLocaleString('en-IN')} orders`])}/>
-        <section className="zl-card"><div className="zl-card-h"><div><h2>Supplier payables</h2><p>Posted supplier bills, less recorded payments.</p></div></div><div className="zl-profit-value">{!d.access.valuation?'Not available for your role':d.supplierPayables.duePaise==null?'Not recorded':money(d.supplierPayables.duePaise)}</div><p className="zl-note">Overdue: {!d.access.valuation?'Not available for your role':d.supplierPayables.overduePaise==null?'Not recorded':money(d.supplierPayables.overduePaise)} · Missing due dates: {!d.access.valuation?'Not available for your role':d.supplierPayables.missingDueDate==null?'Not recorded':d.supplierPayables.missingDueDate.toLocaleString('en-IN')}</p><button className="zl-btn sm" type="button" onClick={()=>go('Bills')}>Open bills <ArrowRight size={14}/></button></section>
-      </div>
-      <div className="zl-grid zl-g2">
-        <RankTable title="Sales by salesman" empty="No salesman sales recorded." rows={d.salesmenPerformance.map(x=>[x.name,`${money(x.salesPaise)} · target ${x.targetPaise==null?'Not set':money(x.targetPaise)}${x.targetPct==null?'':` · ${x.targetPct.toLocaleString('en-IN')}% achieved`}`])}/>
-        <section className="zl-card"><div className="zl-card-h"><div><h2>Data quality</h2><p>Records that can make reports or fulfilment less reliable.</p></div></div><ul className="zl-quality-list"><li><span>Active products missing a BOM</span><b>{d.quality.productsMissingBom.toLocaleString('en-IN')}</b></li><li><span>Negative finished stock</span><b>{d.quality.negativeFinishedGoods.toLocaleString('en-IN')}</b></li><li><span>Negative material stock</span><b>{d.quality.negativeMaterials.toLocaleString('en-IN')}</b></li></ul></section>
-      </div>
-      <div className="zl-overview-quick"><button type="button" onClick={()=>emit('open-invoice')}><IndianRupee size={16}/> Create invoice</button><button type="button" onClick={()=>emit('open-product')}><Package size={16}/> Add product</button><button type="button" onClick={()=>emit('open-customer')}><Users size={16}/> Add distributor</button></div>
-      <p className="zl-note">Sales include confirmed orders. Collections include verified payments only. Percent comparison uses the immediately preceding range of equal length; a zero previous period has no percentage comparison.</p>
-    </>}
+      <p className="ov-foot">Sales include confirmed orders. Collections include verified payments only. Percent comparison uses the immediately preceding range of equal length; a zero previous period has no percentage comparison.</p>
+    </div>}
   </div>;
 }
 
-function RankTable({title,empty,rows}:{title:string;empty:string;rows:Array<[string,string]>}){return <section className="zl-card"><div className="zl-card-h"><div><h2>{title}</h2></div></div>{rows.length?<div className="zl-table-scroll"><table className="zl-data-table"><caption className="zl-sr">{title}</caption><thead><tr><th scope="col">Name</th><th scope="col">Sales</th></tr></thead><tbody>{rows.map(([name,value],i)=><tr key={`${name}-${i}`}><th scope="row">{name}</th><td>{value}</td></tr>)}</tbody></table></div>:<EmptyState>{empty}</EmptyState>}</section>}
-function OverviewCardSkeleton({rows}:{rows:number}){return <section className="zl-card" aria-busy="true" aria-label="Loading overview section"><div className="zl-card-h"><Skeleton h={16} w="42%"/></div>{Array.from({length:rows},(_,i)=><div className="zl-overview-skeleton-row" key={i}><Skeleton h={12} w="38%"/><Skeleton h={12} w="26%"/></div>)}</section>}
+function CardHead({id, title, hint, aside}:{id:string; title:string; hint?:string; aside?:React.ReactNode}) {
+  return <div className="zl-card-h"><div><h2 id={id}>{title}</h2>{hint && <p>{hint}</p>}</div>{aside}</div>;
+}
+
+function Attention({d, go, openOrders}:{d:Overview; go:(page:string)=>void; openOrders:()=>void}) {
+  const items = [
+    ...(d.alerts.delayed || []).map(x => ({key:`delay-${x.id}`, title:`Order ${x.number} is delayed`, detail:`${x.customerName} · ${x.status} · ${Math.floor(x.ageHours / 24)} days`, go:'Orders', icon:<AlertTriangle size={16}/>, tone:'red'})),
+    ...(d.alerts.oldDues || []).map(x => ({key:`due-${x.id}`, title:`${x.customerName} has an overdue balance`, detail:`Order ${x.number} · ${money(x.duePaise)} · ${x.days} days`, go:'Orders', icon:<IndianRupee size={16}/>, tone:'amber'})),
+    ...(d.stock.alerts || []).slice(0, 4).map(x => ({key:`stock-${x.id}`, title:`Reorder ${x.name}`, detail:`${num(x.available)} ${x.unit} available · reorder at ${num(x.reorder)}`, go:'Inventory', icon:<Boxes size={16}/>, tone:'amber'})),
+    ...(d.production.lateOrders || []).map(x => ({key:`production-${x.id}`, title:`Production ${x.number} is overdue`, detail:`${x.productName} · due ${day(x.expectedDate.slice(0, 10))}`, go:'Inventory', icon:<Factory size={16}/>, tone:'red'})),
+    ...(d.alerts.unverifiedPayments ? [{key:'unverified', title:`${d.alerts.unverifiedPayments} payment${d.alerts.unverifiedPayments === 1 ? '' : 's'} need verification`, detail:'Verify received payments before they count in collections.', go:'Orders', icon:<ClipboardCheck size={16}/>, tone:'blue'}] : []),
+  ].slice(0, 8);
+  return <section className="zl-card ov-card ov-attention" aria-labelledby="ov-attention">
+    <CardHead id="ov-attention" title="Needs attention" hint="Prioritised items that may need action today." aside={<Chip tone={items.length ? 'amber' : 'green'} dot>{items.length ? `${items.length} items` : 'All clear'}</Chip>}/>
+    {items.length
+      ? <ul className="ov-alerts">{items.map(a => <li key={a.key}><button type="button" onClick={() => a.go === 'Orders' ? openOrders() : go(a.go)}>
+          <span className={`zl-tile ${a.tone}`} aria-hidden="true">{a.icon}</span>
+          <span className="ov-alert-copy"><b>{a.title}</b><small>{a.detail}</small></span>
+          <ArrowRight size={16} aria-hidden="true"/>
+        </button></li>)}</ul>
+      : <div className="ov-clear"><CheckCircle2 size={26} aria-hidden="true"/>No urgent actions found for the selected period.</div>}
+    {(d.operations.delayed > 5 || d.operations.lowStock > 8) && <div className="ov-card-foot"><button className="zl-btn sm" type="button" onClick={() => d.operations.delayed > 5 ? openOrders() : go('Inventory')}>View all actions <ArrowRight size={14} aria-hidden="true"/></button></div>}
+  </section>;
+}
+
+function TrendCard({d}:{d:Overview}) {
+  const [metric, setMetric] = useState<'sales'|'collected'>('sales');
+  const sales = metric === 'sales';
+  const current = d.series[metric], previous = d.previousSeries[metric];
+  const total = sales ? d.kpi.salesPaise : d.kpi.collectedPaise;
+  const delta = sales ? d.deltas.salesPaise : d.deltas.collectedPaise;
+  const empty = current.every(v => v === 0) && previous.every(v => v === 0);
+  return <section className="zl-card ov-card" aria-labelledby="ov-trend">
+    <CardHead id="ov-trend" title={sales ? 'Sales trend' : 'Collections trend'} hint={sales ? 'Confirmed sales compared with the previous period.' : 'Verified payments by date, compared with the previous period.'} aside={<Segmented value={metric} onChange={setMetric} label="Trend measure" options={[['sales', 'Sales'], ['collected', 'Collections']]}/>}/>
+    {empty
+      ? <EmptyState>{sales ? 'No sales recorded in this or the previous period.' : 'No verified collections recorded in either period.'}</EmptyState>
+      : <>
+        <div className="ov-trend-sum"><b title={inr(total)}>{money(total)}</b><Delta value={delta} suffix="vs previous period"/></div>
+        <TrendChart labels={d.keys.map(k => labelKey(k, d.bucket))} current={current} previous={previous} format={money} ariaLabel={`${sales ? 'Sales' : 'Collections'} trend, current period and previous period`} curName="Selected period" prevName="Previous period"/>
+        <div className="zl-legend ov-legend"><span><i style={{background:'var(--accent2)'}}/>Selected period</span><span><i className="dash"/>Previous period</span></div>
+      </>}
+  </section>;
+}
+
+function AgeingCard({d, openOrders}:{d:Overview; openOrders:()=>void}) {
+  const total = d.finance.ageing.reduce((sum, x) => sum + x.duePaise, 0);
+  const tone = (i:number) => ['var(--accent2)', 'var(--amber)', 'var(--red)'][Math.min(i, 2)];
+  return <section className="zl-card ov-card" aria-labelledby="ov-age">
+    <CardHead id="ov-age" title="Receivable age" hint="Days since each order was confirmed, not days overdue by payment terms; balances without a confirmation date are excluded."/>
+    {total > 0 && <div className="ov-agebar" aria-hidden="true">{d.finance.ageing.filter(x => x.duePaise > 0).map(x => <i key={x.bucket} style={{flexGrow:x.duePaise, background:tone(d.finance.ageing.indexOf(x))}}/>)}</div>}
+    <div className="ov-age">{d.finance.ageing.map((x, i) => <button type="button" key={x.bucket} onClick={openOrders} title={inr(x.duePaise)}>
+      <span><i style={{background:tone(i)}} aria-hidden="true"/>{x.bucket} days</span>
+      <b>{money(x.duePaise)}</b>
+      <small>{num(x.bills)} orders{total > 0 ? ` · ${Math.round(x.duePaise / total * 100)}%` : ''}</small>
+    </button>)}</div>
+  </section>;
+}
+
+/** The main number of a card. Restricted or missing figures read as words, never as a large zero. */
+function Figure({locked, value}:{locked:boolean; value:number|null|undefined}) {
+  if (locked) return <div className="ov-figure na"><Lock size={14} aria-hidden="true"/> {NO_ACCESS}</div>;
+  if (value == null) return <div className="ov-figure na">Not recorded</div>;
+  return <div className="ov-figure" title={inr(value)}>{money(value)}</div>;
+}
+
+function StockCard({d, go}:{d:Overview; go:(page:string)=>void}) {
+  const locked = !d.access.valuation;
+  return <section className="zl-card ov-card" aria-labelledby="ov-stock">
+    <CardHead id="ov-stock" title="Stock & production" hint="Available inventory and active manufacturing work."/>
+    <dl className="ov-stats">
+      <div><dt>Known-cost stock subtotal</dt><dd className={locked || d.stock.stockValuePaise == null ? 'na' : undefined}>{gatedText(locked, d.stock.stockValuePaise, money)}</dd></div>
+      <div><dt>Uncosted stock records</dt><dd className={locked || d.stock.uncostedStockItems == null ? 'na' : undefined}>{gatedText(locked, d.stock.uncostedStockItems, num)}</dd></div>
+      <div><dt>Orders in production</dt><dd>{num(d.production.active)}</dd></div>
+      <div><dt>Delayed production orders</dt><dd className={d.production.late ? 'bad' : undefined}>{num(d.production.late)}</dd></div>
+    </dl>
+    <p className="ov-note">Known weighted-average cost subtotal; uncosted stock is excluded.</p>
+    <div className="ov-card-foot"><button className="zl-btn sm" type="button" onClick={() => go('Inventory')}>Open inventory <ArrowRight size={14} aria-hidden="true"/></button></div>
+  </section>;
+}
+
+function ProfitCard({d}:{d:Overview}) {
+  const locked = !d.access.valuation, coverage = d.profit?.costCoveragePct;
+  const {productsMissingCost:cost, productsMissingGst:gst} = d.quality;
+  return <section className="zl-card ov-card" aria-labelledby="ov-profit">
+    <CardHead id="ov-profit" title="Estimated gross profit" hint="Net of configured GST on costed product lines. Excludes business expenses." aside={<Chip tone="amber">Estimated</Chip>}/>
+    <Figure locked={locked} value={d.profit?.grossProfitPaise}/>
+    {!locked && coverage != null && <div className="ov-meter" aria-hidden="true"><i style={{width:`${Math.min(100, Math.max(0, coverage))}%`}}/></div>}
+    <p className="ov-note">Cost coverage: {gatedText(locked, coverage, n => `${n.toLocaleString('en-IN')}%`)}{locked || coverage == null ? '' : ' of selected-period sales'}. Expenses and salaries: Not recorded.</p>
+    {(cost || gst) ? <p className="ov-warn"><AlertTriangle size={15} aria-hidden="true"/> {cost ?? 'Not recorded'} products missing cost · {gst ?? 'Not recorded'} missing GST rate</p> : null}
+  </section>;
+}
+
+function PayablesCard({d, go}:{d:Overview; go:(page:string)=>void}) {
+  const locked = !d.access.valuation, p = d.supplierPayables;
+  return <section className="zl-card ov-card" aria-labelledby="ov-payables">
+    <CardHead id="ov-payables" title="Supplier payables" hint="Posted supplier bills, less recorded payments."/>
+    <Figure locked={locked} value={p.duePaise}/>
+    <dl className="ov-rows">
+      <div><dt>Overdue</dt><dd className={!locked && p.overduePaise ? 'bad' : undefined}>{gatedText(locked, p.overduePaise, money)}</dd></div>
+      <div><dt>Missing due dates</dt><dd>{gatedText(locked, p.missingDueDate, num)}</dd></div>
+    </dl>
+    <div className="ov-card-foot"><button className="zl-btn sm" type="button" onClick={() => go('Bills')}>Open bills <ArrowRight size={14} aria-hidden="true"/></button></div>
+  </section>;
+}
+
+/** Bars relative to the top row of the list. */
+function relative(rows:Array<{id:string; name:string; paise:number; sub:string}>):RankRow[] {
+  const top = Math.max(...rows.map(r => r.paise), 0) || 1;
+  return rows.map(r => ({id:r.id, name:r.name, value:money(r.paise), exact:inr(r.paise), sub:r.sub, bar:r.paise / top * 100}));
+}
+
+function Ranked({title, hint, empty, rows}:{title:string; hint:string; empty:string; rows:RankRow[]}) {
+  const id = `ov-${title.toLowerCase().replace(/\W+/g, '-')}`;
+  return <section className="zl-card ov-card" aria-labelledby={id}>
+    <CardHead id={id} title={title} hint={hint}/>
+    {rows.length
+      ? <table className="ov-rank">
+          <caption className="zl-sr">{title}</caption>
+          <thead><tr><th scope="col" className="zl-sr">Rank</th><th scope="col" className="zl-sr">Name</th><th scope="col" className="zl-sr">Sales</th></tr></thead>
+          <tbody>{rows.map((r, i) => <tr key={r.id}>
+            <td className="ov-rank-n">{i + 1}</td>
+            <th scope="row"><span className="ov-rank-name">{r.name}</span><small>{r.sub}</small>{r.bar != null && <span className="ov-bar" aria-hidden="true"><i className={r.done ? 'done' : undefined} style={{width:`${Math.min(100, Math.max(2, r.bar))}%`}}/></span>}</th>
+            <td className="ov-rank-v" title={r.exact}>{r.value}</td>
+          </tr>)}</tbody>
+        </table>
+      : <EmptyState>{empty}</EmptyState>}
+  </section>;
+}
+
+function QualityRow({label, value}:{label:string; value:number}) {
+  return <li className={value ? 'warn' : 'ok'}>{value ? <AlertTriangle size={16} aria-hidden="true"/> : <CheckCircle2 size={16} aria-hidden="true"/>}<span>{label}</span><b>{num(value)}</b></li>;
+}
+
+function CardSkeleton({rows, tall}:{rows:number; tall?:boolean}) {
+  return <section className="zl-card ov-card" aria-busy="true" aria-label="Loading overview section">
+    <div className="zl-card-h"><div style={{flex:1, display:'grid', gap:8}}><Skeleton h={16} w="42%"/><Skeleton h={12} w="66%"/></div></div>
+    {tall && <Skeleton h={240} r={12}/>}
+    {Array.from({length:rows}, (_, i) => <div className="ov-skel-row" key={i}><Skeleton h={34} w={34} r={10}/><div style={{flex:1, display:'grid', gap:7}}><Skeleton h={12} w="52%"/><Skeleton h={10} w="72%"/></div></div>)}
+  </section>;
+}
+
+function OverviewSkeleton() {
+  return <div aria-busy="true">
+    <StatSkeletons/>
+    <div className="ov-main"><CardSkeleton rows={7}/><div className="ov-stack"><CardSkeleton rows={0} tall/><CardSkeleton rows={1}/></div></div>
+    <div className="ov-health"><CardSkeleton rows={2}/><CardSkeleton rows={2}/><CardSkeleton rows={2}/></div>
+  </div>;
+}

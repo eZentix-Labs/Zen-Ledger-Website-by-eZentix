@@ -18,7 +18,8 @@ export function useWidth<T extends HTMLElement>() {
 }
 export const niceMax = (v: number) => { if (v <= 0) return 1; const p = 10 ** Math.floor(Math.log10(v)); const n = v / p; return (n <= 1 ? 1 : n <= 2 ? 2 : n <= 2.5 ? 2.5 : n <= 5 ? 5 : 10) * p; };
 export function SrTable({caption, head, rows}: {caption: string; head: string[]; rows: Array<Array<string | number>>}) {
-  return <table className="zl-sr"><caption>{caption}</caption><thead><tr>{head.map(h => <th key={h}>{h}</th>)}</tr></thead><tbody>{rows.map((r, i) => <tr key={i}>{r.map((c, j) => <td key={j}>{c}</td>)}</tr>)}</tbody></table>;
+  // The clip sits on a div: a table ignores width:1px and would add invisible scrollable width on narrow screens.
+  return <div className="zl-sr"><table><caption>{caption}</caption><thead><tr>{head.map(h => <th key={h}>{h}</th>)}</tr></thead><tbody>{rows.map((r, i) => <tr key={i}>{r.map((c, j) => <td key={j}>{c}</td>)}</tr>)}</tbody></table></div>;
 }
 
 export function Sparkline({data, color = 'var(--accent2)', label}: {data: number[]; color?: string; label: string}) {
@@ -31,10 +32,10 @@ export function Sparkline({data, color = 'var(--accent2)', label}: {data: number
 export function TrendChart({labels, current, previous, format, ariaLabel, curName, prevName, height = 230}: {labels: string[]; current: number[]; previous?: number[]; format: (n: number) => string; ariaLabel: string; curName: string; prevName: string; height?: number}) {
   const [ref, w] = useWidth<HTMLDivElement>(); const gid = useId().replace(/:/g, '');
   const [hover, setHover] = useState<number | null>(null);
-  const W = Math.max(w, 280), H = height, L = 56, R = 12, T = 12, B = 26;
-  const max = niceMax(Math.max(...current, ...(previous || []), 0));
+  const W = Math.max(w, 200), H = height, L = 56, R = 12, T = 12, B = 26;
+  const max = niceMax(Math.max(...current, ...(previous || []), 0)), lo = Math.min(...current, ...(previous || []), 0);
   const x = (i: number) => L + (labels.length <= 1 ? (W - L - R) / 2 : (i / (labels.length - 1)) * (W - L - R));
-  const y = (v: number) => T + (1 - v / max) * (H - T - B);
+  const y = (v: number) => T + (1 - (v - lo) / (max - lo)) * (H - T - B);
   const line = (d: number[]) => d.map((v, i) => `${i ? 'L' : 'M'}${x(i)},${y(v)}`).join('');
   const every = Math.ceil(labels.length / Math.max(2, Math.floor((W - L) / 64)));
   const pick = (cx: number) => { const i = Math.round(((cx - L) / (W - L - R)) * (labels.length - 1)); return Math.max(0, Math.min(labels.length - 1, i)); };
@@ -43,8 +44,8 @@ export function TrendChart({labels, current, previous, format, ariaLabel, curNam
       onMouseMove={e => { const r = (e.currentTarget as SVGSVGElement).getBoundingClientRect(); setHover(pick(e.clientX - r.left)); }} onMouseLeave={() => setHover(null)}
       onKeyDown={e => { if (e.key === 'ArrowRight') setHover(h => Math.min(labels.length - 1, (h ?? -1) + 1)); if (e.key === 'ArrowLeft') setHover(h => Math.max(0, (h ?? labels.length) - 1)); }} onBlur={() => setHover(null)}>
       <defs><linearGradient id={gid} x1="0" y1="0" x2="0" y2="1"><stop offset="0" stopColor="var(--accent2)" stopOpacity=".38" /><stop offset="1" stopColor="var(--accent2)" stopOpacity="0" /></linearGradient></defs>
-      {[0, .25, .5, .75, 1].map(f => <g key={f}><line className="grid" x1={L} x2={W - R} y1={y(max * f)} y2={y(max * f)} /><text className="axis" x={L - 8} y={y(max * f) + 4} textAnchor="end">{format(max * f)}</text></g>)}
-      {labels.map((l, i) => i % every === 0 || i === labels.length - 1 ? <text key={i} className="axis" x={x(i)} y={H - 6} textAnchor={i === 0 ? 'start' : i === labels.length - 1 ? 'end' : 'middle'}>{l}</text> : null)}
+      {[0, .25, .5, .75, 1].map(f => { const v = lo + (max - lo) * f; return <g key={f}><line className="grid" x1={L} x2={W - R} y1={y(v)} y2={y(v)} /><text className="axis" x={L - 8} y={y(v) + 4} textAnchor="end">{format(v)}</text></g>; })}
+      {labels.map((l, i) => (i % every === 0 && labels.length - 1 - i >= every / 2) || i === labels.length - 1 ? <text key={i} className="axis" x={x(i)} y={H - 6} textAnchor={i === 0 ? 'start' : i === labels.length - 1 ? 'end' : 'middle'}>{l}</text> : null)}
       {previous && <path d={line(previous)} fill="none" stroke="var(--faint)" strokeWidth="2" strokeDasharray="5 5" />}
       <path d={`${line(current)}L${x(current.length - 1)},${y(0)}L${x(0)},${y(0)}Z`} fill={`url(#${gid})`} />
       <path d={line(current)} fill="none" stroke="var(--accent2)" strokeWidth="2" strokeLinejoin="round" />
@@ -56,11 +57,11 @@ export function TrendChart({labels, current, previous, format, ariaLabel, curNam
 }
 
 /** Vertical bars (e.g. orders by hour). */
-export function BarChart({labels, values, format, ariaLabel, height = 160, color = 'var(--accent2)'}: {labels: string[]; values: number[]; format: (n: number) => string; ariaLabel: string; height?: number; color?: string}) {
+export function BarChart({labels, values, format, ariaLabel, height = 160, color = 'var(--accent2)', labelGap = 34}: {labels: string[]; values: number[]; format: (n: number) => string; ariaLabel: string; height?: number; color?: string; labelGap?: number}) {
   const [ref, w] = useWidth<HTMLDivElement>(); const [hover, setHover] = useState<number | null>(null);
   const W = Math.max(w, 240), H = height, L = 28, B = 22, T = 8, max = niceMax(Math.max(...values, 0));
   const bw = (W - L) / values.length, gap = Math.min(4, bw * .25);
-  const every = Math.ceil(values.length / Math.max(2, Math.floor((W - L) / 34)));
+  const every = Math.ceil(values.length / Math.max(2, Math.floor((W - L) / labelGap)));
   return <div ref={ref} className="zl-chart">
     {w > 0 && <svg width={W} height={H} role="img" aria-label={ariaLabel} onMouseLeave={() => setHover(null)}>
       {[0, .5, 1].map(f => <g key={f}><line className="grid" x1={L} x2={W} y1={T + (1 - f) * (H - T - B)} y2={T + (1 - f) * (H - T - B)} /><text className="axis" x={L - 6} y={T + (1 - f) * (H - T - B) + 4} textAnchor="end">{format(max * f)}</text></g>)}
@@ -130,4 +131,14 @@ export function Gauge({value, label, sub, ariaLabel}: {value: number; label: str
     <text x={S / 2} y={S / 2 + 2} textAnchor="middle" style={{fill: 'var(--text)', font: '700 24px var(--head)', fontVariantNumeric: 'tabular-nums'}}>{label}</text>
     {sub && <text x={S / 2} y={S / 2 + 24} textAnchor="middle" className="axis">{sub}</text>}
   </svg>;
+}
+
+export type RankItem = {key: string; label: React.ReactNode; sub?: React.ReactNode; value: number; show: React.ReactNode; title?: string; color?: string};
+/** Ranked horizontal bars. Every value is printed beside its bar, so nothing depends on hovering. `max` overrides the scale. */
+export function RankBars({items, ariaLabel, max, color = 'var(--accent2)'}: {items: RankItem[]; ariaLabel: string; max?: number; color?: string}) {
+  const top = max ?? (Math.max(...items.map(i => i.value), 0) || 1);
+  return <ol className="zl-rank" aria-label={ariaLabel}>{items.map(i => <li key={i.key}>
+    <div className="r1"><span className="nm">{i.label}{i.sub && <small>{i.sub}</small>}</span><span className="vv" title={i.title}>{i.show}</span></div>
+    <span className="zl-rank-bar" aria-hidden="true"><i style={{width: `${i.value > 0 ? Math.max(1.5, Math.min(100, i.value / top * 100)) : 0}%`, background: i.color || color}} /></span>
+  </li>)}</ol>;
 }

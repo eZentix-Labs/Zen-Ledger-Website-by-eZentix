@@ -310,7 +310,8 @@ export function registerSalesRoutes(app: Express) {
     const sum = (k: keyof ReturnType<typeof metricsFor>) => rows.reduce((a, r) => a + (r[k] as number), 0);
     const productSales = new Map<string, {name: string; qty: number; valuePaise: number}>();
     const customerSales = new Map<string, {name: string; orders: number; valuePaise: number}>();
-    for (const o of d.orders.filter(o => COUNTED[d.policy].includes(o.status) && inRange(countedDate(o, d.policy), from, to) && (!req.query.salesmanId || o.createdBy === req.query.salesmanId))) {
+    const inView = new Set(rows.map(r => r.id)); // the territory filter narrows these lists too, so they agree with the totals
+    for (const o of d.orders.filter(o => COUNTED[d.policy].includes(o.status) && inRange(countedDate(o, d.policy), from, to) && (!req.query.salesmanId || o.createdBy === req.query.salesmanId) && (!req.query.territory || inView.has(o.createdBy)))) {
       for (const l of o.items) { const x = productSales.get(l.productId) || {name: l.name, qty: 0, valuePaise: 0}; x.qty += l.qty; x.valuePaise += paise(l.qty * l.price); productSales.set(l.productId, x); }
       const c = customerSales.get(o.customerId) || {name: o.customerName, orders: 0, valuePaise: 0}; c.orders++; c.valuePaise += paise(o.total); customerSales.set(o.customerId, c);
     }
